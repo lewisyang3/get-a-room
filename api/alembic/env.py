@@ -5,6 +5,14 @@ from sqlalchemy import engine_from_config, pool
 
 from app.config import get_settings
 from app.db import Base
+from app.models.models import (
+    AvailabilityInterval,
+    Building,
+    ImportRun,
+    Meeting,
+    Room,
+    Term,
+)
 
 # Alembic Config object, provides access to values within the .ini file in use.
 config = context.config
