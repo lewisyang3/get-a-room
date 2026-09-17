@@ -3,7 +3,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 from curl_cffi import requests
-from curl_cffi.requests.exceptions import Timeout
+from curl_cffi.requests.exceptions import RequestException
 
 from app.config import get_settings
 
@@ -17,8 +17,6 @@ class FetchError(Exception):
 class SectionResponse(Protocol):
     status_code: int
     text: str
-
-    def raise_for_status(self) -> None: ...
 
 
 class SectionSession(Protocol):
@@ -58,27 +56,26 @@ def fetch(
 ) -> SectionResponse:
     """GETs `path`, sleeping `rate_limit_seconds` before every attempt.
 
-    Retries transient failures (timeouts, 5xx) up to `max_attempts` times.
-    A 404 is treated as a hard, non-retryable failure - it means the
-    section disappeared between enumeration and fetch, not a blip worth
-    retrying.
+    Retries transient failures - network/timeout errors and any non-404
+    4xx/5xx response - up to `max_attempts` times. A 404 is treated as a
+    hard, non-retryable failure - it means the section disappeared between
+    enumeration and fetch, not a blip worth retrying.
     """
     last_error: Exception | None = None
     for _attempt in range(1, max_attempts + 1):
         sleep(rate_limit_seconds)
         try:
             response = session.get(path, params=params)
-        except Timeout as exc:
+        except RequestException as exc:
             last_error = exc
             continue
 
         if response.status_code == 404:
             raise FetchError(f"{path} returned 404 (not retried)")
-        if response.status_code >= 500:
+        if response.status_code >= 400:
             last_error = FetchError(f"{path} returned {response.status_code}")
             continue
 
-        response.raise_for_status()
         return response
 
     raise FetchError(f"failed to fetch {path} after {max_attempts} attempts") from last_error

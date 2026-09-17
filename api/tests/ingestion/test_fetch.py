@@ -1,5 +1,5 @@
 import pytest
-from curl_cffi.requests.exceptions import Timeout
+from curl_cffi.requests.exceptions import ConnectionError, Timeout
 
 from ingestion.fetch import FetchError, fetch
 from tests.ingestion.conftest import FakeResponse, FakeSession
@@ -49,6 +49,40 @@ def test_fetch_retries_on_timeout():
 
     assert response.status_code == 200
     assert attempts["count"] == 2
+
+
+def test_fetch_retries_on_connection_error():
+    """Not just Timeout - any network-level RequestException is retryable."""
+    attempts = {"count": 0}
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        attempts["count"] += 1
+        if attempts["count"] < 2:
+            raise ConnectionError("reset")
+        return FakeResponse(200, text="ok")
+
+    session = FakeSession(handler)
+    sleep, _ = _fake_sleep_recorder()
+
+    response = fetch(session, "/content/whatever", rate_limit_seconds=0.1, sleep=sleep)
+
+    assert response.status_code == 200
+    assert attempts["count"] == 2
+
+
+def test_fetch_403_retries_then_raises_fetch_error():
+    """A non-404 4xx (e.g. bot-detection catching up mid-run) must not crash
+    the pipeline with a raw curl_cffi HTTPError - it should behave like 5xx."""
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        return FakeResponse(403)
+
+    session = FakeSession(handler)
+    sleep, _ = _fake_sleep_recorder()
+
+    with pytest.raises(FetchError, match="after 3 attempts") as exc_info:
+        fetch(session, "/content/blocked", rate_limit_seconds=0.1, max_attempts=3, sleep=sleep)
+    assert "403" in str(exc_info.value.__cause__)
 
 
 def test_fetch_404_is_not_retried():
