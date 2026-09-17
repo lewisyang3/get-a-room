@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     scraper_rate_limit_seconds: float = 1.0
     scraper_timeout_seconds: float = 30.0
+    scraper_user_agent: str = "GetARoomBot/0.1 (+https://github.com/lewisyang3/get-a-room; polite academic-schedule scraper)"
 
     @property
     def allowed_origins_list(self) -> list[str]:
