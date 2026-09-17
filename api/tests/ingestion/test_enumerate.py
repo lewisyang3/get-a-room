@@ -1,3 +1,5 @@
+import pytest
+
 from ingestion.enumerate import enumerate_section_urls
 from tests.ingestion.conftest import FakeResponse, FakeSession
 
@@ -58,3 +60,18 @@ def test_enumerate_dedupes_links_across_pages_without_stopping_early():
 
     assert urls == ["/content/a", "/content/b", "/content/c"]
     assert [call[1]["page"] for call in session.calls] == [0, 1, 2, 3]
+
+
+def test_enumerate_raises_instead_of_hanging_on_a_misbehaving_pager():
+    # A pager that clamps out-of-range pages and echoes the same non-empty
+    # content forever, rather than ever returning zero links. Combined with
+    # cross-page dedup, this would otherwise loop forever yielding nothing.
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        return FakeResponse(200, text='<a href="/content/a">A</a>')
+
+    session = FakeSession(handler)
+
+    with pytest.raises(RuntimeError, match="max_pages"):
+        list(enumerate_section_urls(session, term_id=8573, rate_limit_seconds=0, max_pages=2))
+
+    assert len(session.calls) == 2
