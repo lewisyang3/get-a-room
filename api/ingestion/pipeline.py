@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -6,6 +7,8 @@ from ingestion.fetch import FetchError, SectionSession, fetch
 from ingestion.filter import classify, is_accepted
 from ingestion.parse import parse_section
 from ingestion.types import ParsedSection
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -39,7 +42,8 @@ class IngestionPipeline:
             slug = path.removeprefix("/content/")
             try:
                 response = fetch(self.session, path, rate_limit_seconds=self.rate_limit_seconds)
-            except FetchError:
+            except FetchError as exc:
+                logger.warning("failed to fetch %s: %s", path, exc)
                 self.stats.failed += 1
                 continue
 
@@ -49,7 +53,12 @@ class IngestionPipeline:
                 # A single malformed section page shouldn't abort a whole
                 # term's scrape - catches this broadly (not just parse_section's
                 # own ValueError) since real-world HTML can fail in ways the
-                # parser doesn't explicitly anticipate.
+                # parser doesn't explicitly anticipate. logger.exception
+                # captures type/message/traceback so a real parser regression
+                # (e.g. an unrecognized day abbreviation) is distinguishable
+                # from routine malformed pages, instead of just silently
+                # nudging stats.failed.
+                logger.exception("failed to parse section %s (%s)", slug, path)
                 self.stats.failed += 1
                 continue
 

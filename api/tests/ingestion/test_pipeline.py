@@ -1,4 +1,7 @@
+import logging
 from pathlib import Path
+
+import pytest
 
 from ingestion.pipeline import IngestionPipeline
 from tests.ingestion.conftest import FakeResponse, FakeSession
@@ -68,3 +71,23 @@ def test_pipeline_survives_a_malformed_section_page():
     assert pipeline.stats.read == 2
     assert pipeline.stats.failed == 1
     assert pipeline.stats.accepted == 1
+
+
+def test_pipeline_logs_parse_failures_with_the_slug(caplog: pytest.LogCaptureFixture):
+    taxonomy_pages = {0: '<a href="/content/broken">A</a>', 1: ""}
+    section_html = {"/content/broken": "<html><body>not a section page at all</body></html>"}
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        if path.startswith("/taxonomy/term/"):
+            page = (params or {}).get("page", 0)
+            return FakeResponse(200, text=taxonomy_pages.get(page, ""))
+        return FakeResponse(200, text=section_html[path])
+
+    session = FakeSession(handler)
+    pipeline = IngestionPipeline(session, rate_limit_seconds=0)
+
+    with caplog.at_level(logging.ERROR, logger="ingestion.pipeline"):
+        list(pipeline.run(term_id=8573))
+
+    assert any("broken" in record.message for record in caplog.records)
+    assert caplog.records[0].exc_info is not None
