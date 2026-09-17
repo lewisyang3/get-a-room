@@ -37,3 +37,24 @@ def test_enumerate_dedupes_links_within_a_page():
     urls = list(enumerate_section_urls(session, term_id=8573, rate_limit_seconds=0))
 
     assert urls == ["/content/x-lec-001"]
+
+
+def test_enumerate_dedupes_links_across_pages_without_stopping_early():
+    # page 1 repeats B from page 0 and contributes nothing new - a known
+    # risk with offset-based pagination when content shifts between
+    # requests. It must not be mistaken for the end of the pager: raw link
+    # count (not net-new count) drives termination, so page 2's genuinely
+    # new link still gets picked up, and page 3 (truly empty) is what stops
+    # the loop.
+    overlapping_pages = {
+        0: '<a href="/content/a">A</a> <a href="/content/b">B</a>',
+        1: '<a href="/content/b">B again</a>',
+        2: '<a href="/content/c">C</a>',
+        3: "",
+    }
+    session = _make_session(overlapping_pages)
+
+    urls = list(enumerate_section_urls(session, term_id=8573, rate_limit_seconds=0))
+
+    assert urls == ["/content/a", "/content/b", "/content/c"]
+    assert [call[1]["page"] for call in session.calls] == [0, 1, 2, 3]

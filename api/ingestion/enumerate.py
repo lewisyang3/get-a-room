@@ -18,9 +18,14 @@ def enumerate_section_urls(
 
     Pages classes.berkeley.edu/taxonomy/term/{term_id}?page=N starting at 0
     and stops as soon as a page yields no section links, rather than
-    relying on a known page count.
+    relying on a known page count. Termination is based on the raw
+    (pre-dedup) link count for that page, not the net-new count - a page
+    that happens to repeat only already-seen links doesn't necessarily mean
+    the end of the pager, and stopping there would silently drop whatever
+    real sections follow.
     """
     page = 0
+    seen: set[str] = set()
     while True:
         response = fetch(
             session,
@@ -28,8 +33,11 @@ def enumerate_section_urls(
             params={"page": page},
             rate_limit_seconds=rate_limit_seconds,
         )
-        links = list(dict.fromkeys(_CONTENT_LINK_RE.findall(response.text)))
+        links = _CONTENT_LINK_RE.findall(response.text)
         if not links:
             return
-        yield from links
+        for link in links:
+            if link not in seen:
+                seen.add(link)
+                yield link
         page += 1
