@@ -40,3 +40,31 @@ def test_pipeline_end_to_end_counts_and_yields():
     assert pipeline.stats.accepted == 1  # lec-with-room
     assert pipeline.stats.rejected == 1  # ind-no-meetings, wrong type
     assert pipeline.stats.failed == 1  # missing-page, 404
+
+
+def test_pipeline_survives_a_malformed_section_page():
+    taxonomy_pages = {
+        0: '<a href="/content/broken">A</a><a href="/content/lec-with-room">B</a>',
+        1: "",
+    }
+    section_html = {
+        "/content/broken": "<html><body>not a section page at all</body></html>",
+        "/content/lec-with-room": (FIXTURES / "lec_with_room.html").read_text(),
+    }
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        if path.startswith("/taxonomy/term/"):
+            page = (params or {}).get("page", 0)
+            return FakeResponse(200, text=taxonomy_pages.get(page, ""))
+        return FakeResponse(200, text=section_html[path])
+
+    session = FakeSession(handler)
+    pipeline = IngestionPipeline(session, rate_limit_seconds=0)
+
+    sections = list(pipeline.run(term_id=8573))
+
+    # the broken page is skipped, not fatal - the next section still comes through
+    assert [s.slug for s in sections] == ["lec-with-room"]
+    assert pipeline.stats.read == 2
+    assert pipeline.stats.failed == 1
+    assert pipeline.stats.accepted == 1

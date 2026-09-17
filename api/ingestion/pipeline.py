@@ -43,7 +43,16 @@ class IngestionPipeline:
                 self.stats.failed += 1
                 continue
 
-            section = classify(parse_section(response.text, slug=slug))
+            try:
+                section = classify(parse_section(response.text, slug=slug))
+            except Exception:
+                # A single malformed section page shouldn't abort a whole
+                # term's scrape - catches this broadly (not just parse_section's
+                # own ValueError) since real-world HTML can fail in ways the
+                # parser doesn't explicitly anticipate.
+                self.stats.failed += 1
+                continue
+
             if is_accepted(section):
                 self.stats.accepted += 1
             else:
