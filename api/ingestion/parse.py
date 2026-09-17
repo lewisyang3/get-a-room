@@ -55,11 +55,17 @@ def _parse_time_range(time_div: Tag) -> tuple[time, time] | None:
     end = _parse_time(match.group("end"))
     # Berkeley displays the end time inclusive of its last minute (e.g. a
     # standard 89-minute TuTh block shows as "10:00 am - 11:29 am"). The
-    # true half-open boundary is one minute later. This does not handle a
-    # meeting whose displayed end time is 11:59pm (would roll into the next
-    # day) - no real Berkeley class meets that late, so it's left unhandled
-    # rather than adding complexity for a case that can't occur.
+    # true half-open boundary is one minute later.
     end = (datetime.combine(datetime.min, end) + timedelta(minutes=1)).time()
+    if end <= start:
+        # A displayed end time of 11:59pm would roll into the next day here,
+        # producing an end before start - no real Berkeley class meets that
+        # late, but fail loudly rather than silently write an inverted
+        # range. Caught by pipeline.py's per-section failure handling.
+        raise ValueError(
+            f"meeting end time {end} is not after start time {start} "
+            "(likely a midnight-crossing meeting, which isn't supported)"
+        )
     return start, end
 
 

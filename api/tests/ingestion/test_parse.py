@@ -1,6 +1,8 @@
 from datetime import time
 from pathlib import Path
 
+import pytest
+
 from ingestion.parse import parse_section
 from ingestion.types import ParsedMeeting
 
@@ -64,6 +66,32 @@ def test_grp_missing_location_div_is_empty():
     assert section.room_number is None
     assert section.location_raw is None
     assert len(section.meetings) == 1  # Th
+
+
+def test_meeting_ending_at_midnight_raises_instead_of_rolling_over():
+    html = """
+    <article data-history-node-id="1" class="sf">
+      <div class="sf--title"><h1><span class="sf--title--code">LEC</span></h1></div>
+      <div class="sf--meetings">
+        <div class="sf--meeting-details">
+          <div class="sf--meeting-days">
+            <span class="icon icon-days"></span>
+            <span>Mo</span>
+          </div>
+          <div class="sf--meeting-time">
+            <span class="icon icon-time"></span>
+            <span>11:00 pm  -  11:59 pm</span>
+          </div>
+          <div class="sf--location">
+            <a href="http://example.com">Wheeler 100</a>
+          </div>
+        </div>
+      </div>
+    </article>
+    """
+
+    with pytest.raises(ValueError, match="not after start time"):
+        parse_section(html, slug="midnight-crossing")
 
 
 def test_ind_section_has_no_meetings():
