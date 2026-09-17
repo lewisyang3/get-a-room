@@ -28,16 +28,38 @@ class IngestionPipeline:
     eventually need to record.
     """
 
-    def __init__(self, session: SectionSession, *, rate_limit_seconds: float):
+    def __init__(
+        self,
+        session: SectionSession,
+        *,
+        rate_limit_seconds: float,
+        max_pages: int = 5000,
+    ):
         self.session = session
         self.rate_limit_seconds = rate_limit_seconds
+        self.max_pages = max_pages
         self.stats = PipelineStats()
 
     def run(self, term_id: int) -> Iterator[ParsedSection]:
         section_paths = enumerate_section_urls(
-            self.session, term_id, rate_limit_seconds=self.rate_limit_seconds
+            self.session,
+            term_id,
+            rate_limit_seconds=self.rate_limit_seconds,
+            max_pages=self.max_pages,
         )
-        for path in section_paths:
+        while True:
+            try:
+                path = next(section_paths)
+            except StopIteration:
+                return
+            except (FetchError, RuntimeError):
+                # Unlike a single section's fetch/parse failure below, a
+                # failure enumerating the term means we don't know what
+                # sections we missed - treating it as "run complete" would
+                # silently produce a truncated-but-looks-successful import.
+                logger.exception("failed to enumerate sections for term %s", term_id)
+                raise
+
             self.stats.read += 1
             slug = path.removeprefix("/content/")
             try:

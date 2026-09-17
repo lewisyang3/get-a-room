@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from ingestion.fetch import FetchError
 from ingestion.pipeline import IngestionPipeline
 from tests.ingestion.conftest import FakeResponse, FakeSession
 
@@ -71,6 +72,42 @@ def test_pipeline_survives_a_malformed_section_page():
     assert pipeline.stats.read == 2
     assert pipeline.stats.failed == 1
     assert pipeline.stats.accepted == 1
+
+
+def test_pipeline_propagates_a_taxonomy_page_fetch_failure(caplog: pytest.LogCaptureFixture):
+    """A failure enumerating the term (unlike a single section's fetch/parse
+    failure) means we don't know what sections we missed - it must not be
+    swallowed into a truncated-but-looks-successful run."""
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        assert path.startswith("/taxonomy/term/")
+        return FakeResponse(403, text="Forbidden by WAF")
+
+    session = FakeSession(handler)
+    pipeline = IngestionPipeline(session, rate_limit_seconds=0)
+
+    with caplog.at_level(logging.ERROR, logger="ingestion.pipeline"):
+        with pytest.raises(FetchError):
+            list(pipeline.run(term_id=8573))
+
+    assert any("enumerate" in record.message for record in caplog.records)
+    assert pipeline.stats.read == 0
+
+
+def test_pipeline_propagates_max_pages_exceeded():
+    """The enumerate_section_urls max_pages guard is reachable through the
+    pipeline, not just the generator directly."""
+    taxonomy_pages = {n: '<a href="/content/repeated">A</a>' for n in range(10)}
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        page = (params or {}).get("page", 0)
+        return FakeResponse(200, text=taxonomy_pages.get(page, ""))
+
+    session = FakeSession(handler)
+    pipeline = IngestionPipeline(session, rate_limit_seconds=0, max_pages=3)
+
+    with pytest.raises(RuntimeError, match="max_pages"):
+        list(pipeline.run(term_id=8573))
 
 
 def test_pipeline_logs_parse_failures_with_the_slug(caplog: pytest.LogCaptureFixture):
