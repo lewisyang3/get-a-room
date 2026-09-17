@@ -3,11 +3,23 @@ from collections.abc import Callable
 from typing import Protocol
 
 from curl_cffi import requests
-from curl_cffi.requests.exceptions import RequestException
+from curl_cffi.requests.exceptions import (
+    ConnectionError,
+    DNSError,
+    ProxyError,
+    RequestException,
+    SSLError,
+    Timeout,
+)
 
 from app.config import get_settings
 
 BASE_URL = "https://classes.berkeley.edu"
+
+# Actual connectivity failures - worth retrying, since the same request may
+# succeed a moment later. Anything else deriving from RequestException (e.g.
+# InvalidURL, MissingSchema) is a permanent error that retrying won't fix.
+_RETRYABLE_ERRORS = (Timeout, ConnectionError, SSLError, DNSError, ProxyError)
 
 
 class FetchError(Exception):
@@ -69,19 +81,21 @@ def fetch(
 ) -> SectionResponse:
     """GETs `path`, sleeping `rate_limit_seconds` before every attempt.
 
-    Retries transient failures - network/timeout errors and any 4xx/5xx not
-    in _HARD_FAIL_STATUSES - up to `max_attempts` times. A hard-fail status
-    raises immediately without retrying, since retrying identically won't
-    fix it (see _HARD_FAIL_STATUSES).
+    Retries transient failures - _RETRYABLE_ERRORS and any 4xx/5xx not in
+    _HARD_FAIL_STATUSES - up to `max_attempts` times. A hard-fail status, or
+    a non-retryable RequestException (e.g. InvalidURL - a malformed path
+    won't become valid on retry), raises immediately without retrying.
     """
     last_error: Exception | None = None
     for _attempt in range(1, max_attempts + 1):
         sleep(rate_limit_seconds)
         try:
             response = session.get(path, params=params)
-        except RequestException as exc:
+        except _RETRYABLE_ERRORS as exc:
             last_error = exc
             continue
+        except RequestException as exc:
+            raise FetchError(f"{path} failed: {exc}") from exc
 
         if response.status_code in _HARD_FAIL_STATUSES:
             raise FetchError(f"{path} returned {_error_detail(response)} (not retried)")

@@ -1,5 +1,5 @@
 import pytest
-from curl_cffi.requests.exceptions import ConnectionError, Timeout
+from curl_cffi.requests.exceptions import ConnectionError, InvalidURL, Timeout
 
 from ingestion.fetch import FetchError, fetch
 from tests.ingestion.conftest import FakeResponse, FakeSession
@@ -68,6 +68,26 @@ def test_fetch_retries_on_connection_error():
 
     assert response.status_code == 200
     assert attempts["count"] == 2
+
+
+def test_fetch_invalid_url_is_not_retried():
+    """A non-retryable RequestException (e.g. a malformed path) fails fast
+    with a FetchError instead of burning max_attempts on something that
+    will never succeed, unlike Timeout/ConnectionError above."""
+    attempts = {"count": 0}
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        attempts["count"] += 1
+        raise InvalidURL("bad url")
+
+    session = FakeSession(handler)
+    sleep, _ = _fake_sleep_recorder()
+
+    with pytest.raises(FetchError) as exc_info:
+        fetch(session, "/content/bad path", rate_limit_seconds=0.1, sleep=sleep)
+
+    assert attempts["count"] == 1
+    assert isinstance(exc_info.value.__cause__, InvalidURL)
 
 
 def test_fetch_403_is_not_retried():
