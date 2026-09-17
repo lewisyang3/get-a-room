@@ -70,19 +70,51 @@ def test_fetch_retries_on_connection_error():
     assert attempts["count"] == 2
 
 
-def test_fetch_403_retries_then_raises_fetch_error():
-    """A non-404 4xx (e.g. bot-detection catching up mid-run) must not crash
-    the pipeline with a raw curl_cffi HTTPError - it should behave like 5xx."""
+def test_fetch_403_is_not_retried():
+    """403 (most likely our TLS-impersonated session getting bot-blocked) is
+    a hard fail like 404, not a transient error - retrying identically
+    won't fix it, so don't burn max_attempts * rate_limit_seconds on it."""
+    attempts = {"count": 0}
 
     def handler(path: str, params: dict | None) -> FakeResponse:
-        return FakeResponse(403)
+        attempts["count"] += 1
+        return FakeResponse(403, text="Forbidden by WAF")
+
+    session = FakeSession(handler)
+    sleep, _ = _fake_sleep_recorder()
+
+    with pytest.raises(FetchError, match="not retried") as exc_info:
+        fetch(session, "/content/blocked", rate_limit_seconds=0.1, sleep=sleep)
+
+    assert attempts["count"] == 1
+    assert "Forbidden by WAF" in str(exc_info.value)
+
+
+def test_fetch_401_is_not_retried():
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        return FakeResponse(401)
+
+    session = FakeSession(handler)
+    sleep, _ = _fake_sleep_recorder()
+
+    with pytest.raises(FetchError, match="not retried"):
+        fetch(session, "/content/blocked", rate_limit_seconds=0.1, sleep=sleep)
+
+
+def test_fetch_429_retries_then_raises_fetch_error():
+    """429 (rate limited) is a transient failure worth retrying, unlike
+    401/403/404 - confirms the hard-fail set doesn't over-broadly cover
+    every non-2xx status."""
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        return FakeResponse(429)
 
     session = FakeSession(handler)
     sleep, _ = _fake_sleep_recorder()
 
     with pytest.raises(FetchError, match="after 3 attempts") as exc_info:
-        fetch(session, "/content/blocked", rate_limit_seconds=0.1, max_attempts=3, sleep=sleep)
-    assert "403" in str(exc_info.value.__cause__)
+        fetch(session, "/content/limited", rate_limit_seconds=0.1, max_attempts=3, sleep=sleep)
+    assert "429" in str(exc_info.value.__cause__)
 
 
 def test_fetch_404_is_not_retried():

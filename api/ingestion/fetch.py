@@ -25,6 +25,19 @@ class SectionSession(Protocol):
     ) -> SectionResponse: ...
 
 
+# 404: the section disappeared between enumeration and fetch.
+# 401/403: most likely our TLS-impersonated session getting bot-blocked
+# (see build_session's docstring) - retrying identically won't fix that,
+# so failing immediately avoids burning max_attempts * rate_limit_seconds
+# on something that will never succeed.
+_HARD_FAIL_STATUSES = {401, 403, 404}
+
+
+def _error_detail(response: SectionResponse) -> str:
+    snippet = " ".join(response.text.split())[:200]
+    return f"{response.status_code}" + (f": {snippet}" if snippet else "")
+
+
 def build_session() -> requests.Session:
     """A curl_cffi session impersonating a real browser's TLS handshake.
 
@@ -56,10 +69,10 @@ def fetch(
 ) -> SectionResponse:
     """GETs `path`, sleeping `rate_limit_seconds` before every attempt.
 
-    Retries transient failures - network/timeout errors and any non-404
-    4xx/5xx response - up to `max_attempts` times. A 404 is treated as a
-    hard, non-retryable failure - it means the section disappeared between
-    enumeration and fetch, not a blip worth retrying.
+    Retries transient failures - network/timeout errors and any 4xx/5xx not
+    in _HARD_FAIL_STATUSES - up to `max_attempts` times. A hard-fail status
+    raises immediately without retrying, since retrying identically won't
+    fix it (see _HARD_FAIL_STATUSES).
     """
     last_error: Exception | None = None
     for _attempt in range(1, max_attempts + 1):
@@ -70,10 +83,10 @@ def fetch(
             last_error = exc
             continue
 
-        if response.status_code == 404:
-            raise FetchError(f"{path} returned 404 (not retried)")
+        if response.status_code in _HARD_FAIL_STATUSES:
+            raise FetchError(f"{path} returned {_error_detail(response)} (not retried)")
         if response.status_code >= 400:
-            last_error = FetchError(f"{path} returned {response.status_code}")
+            last_error = FetchError(f"{path} returned {_error_detail(response)}")
             continue
 
         return response
