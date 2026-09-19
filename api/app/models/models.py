@@ -187,6 +187,7 @@ class ImportRun(Base):
     records_read: Mapped[int] = mapped_column(Integer, default=0)
     records_imported: Mapped[int] = mapped_column(Integer, default=0)
     records_rejected: Mapped[int] = mapped_column(Integer, default=0)
+    records_failed: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[ImportStatus] = mapped_column(
         SqlEnum(ImportStatus), nullable=False
     )
