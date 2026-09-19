@@ -43,6 +43,11 @@ To generate a new migration after changing models in `app/models/`:
 alembic revision --autogenerate -m "describe the change"
 ```
 
+New model modules must be imported and re-exported from `app/models/__init__.py`
+(see the comment there) — Alembic only sees model classes that have actually
+been imported somewhere, and only imports `app.models` itself. A model defined
+in a module that's never imported won't show up in autogenerate.
+
 ## Running tests and lint locally
 
 ```bash

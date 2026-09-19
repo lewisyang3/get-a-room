@@ -4,6 +4,10 @@
 # invisible to `alembic revision --autogenerate`.
 #
 # Example, once a model module exists:
+<<<<<<< HEAD
 # from .term import Term
+=======
+#   from .term import Term
+>>>>>>> origin/main
 #
 # __all__ = ["Term"]
