@@ -8,7 +8,6 @@ from app.api.schemas.availability import AvailabilityResponse
 from app.db import get_db
 from app.models.models import AvailabilityInterval, Building, Room
 
-
 # Creates a router for availability-related endpoints.
 router = APIRouter(
     prefix="/availability",
@@ -21,19 +20,14 @@ router = APIRouter(
 def get_available_rooms(
     # Identifies the academic term being searched.
     term_id: int,
-
     # Uses 0 for Monday through 6 for Sunday.
     day_of_week: int = Query(..., ge=0, le=6),
-
     # Specifies the time at which the user wants to search.
     requested_time: time = Query(..., alias="time"),
-
     # Removes availability gaps shorter than this value.
     minimum_minutes: int = Query(60, ge=1),
-
     # Optionally limits results to one building.
     building_id: int | None = None,
-
     # Gets a database session from FastAPI.
     db: Session = Depends(get_db),
 ) -> list[AvailabilityResponse]:
@@ -47,14 +41,14 @@ def get_available_rooms(
             AvailabilityInterval.day_of_week == day_of_week,
             AvailabilityInterval.start_time <= requested_time,
             AvailabilityInterval.end_time > requested_time,
+            Room.in_use.is_(True),
+            Building.included_in_coverage.is_(True),
         )
     )
 
     # Adds the building filter only when one was provided.
     if building_id is not None:
-        statement = statement.where(
-            Building.building_id == building_id
-        )
+        statement = statement.where(Building.building_id == building_id)
 
     # Runs the query and retrieves the matching rows.
     rows = db.execute(statement).all()
@@ -62,18 +56,13 @@ def get_available_rooms(
     # Stores the formatted API results.
     results: list[AvailabilityResponse] = []
 
+    # Combines the requested time with an arbitrary date once for duration math.
+    start_datetime = datetime.combine(date.today(), requested_time)
+
     # Processes each available interval.
     for interval, room, building in rows:
-        # Combines the times with an arbitrary date to calculate duration.
-        start_datetime = datetime.combine(
-            date.today(),
-            requested_time,
-        )
-
-        end_datetime = datetime.combine(
-            date.today(),
-            interval.end_time,
-        )
+        # Combines the interval end time with an arbitrary date.
+        end_datetime = datetime.combine(date.today(), interval.end_time)
 
         # Calculates the number of available minutes.
         available_minutes = int(
