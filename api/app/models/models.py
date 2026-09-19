@@ -3,8 +3,9 @@
 from datetime import date, datetime, time
 from enum import Enum
 
-# Import SQLAlchemy libraries for columns and restraints
+# Import SQLAlchemy libraries for columns and constraints
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     Enum as SqlEnum,
@@ -22,19 +23,23 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 # Import base class for db models
 from app.db import Base
 
+
 class TermStatus(str, Enum):
     # Term in session
     ACTIVE = "active"
     # Previous terms, not in session
     ARCHIVED = "archived"
 
+
 class ImportStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
 
+
 class Term(Base):
     __tablename__ = "term"
+
     # Primary key, unique identifier for the term
     term_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
@@ -100,6 +105,7 @@ class Room(Base):
 
 class Meeting(Base):
     __tablename__ = "meeting"
+
     # primary key, unique identifier for the meeting
     meeting_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # foreign key to the room table, indicating which room the meeting is held in
@@ -120,6 +126,10 @@ class Meeting(Base):
     term: Mapped["Term"] = relationship(back_populates="meetings")
 
     __table_args__ = (
+        CheckConstraint(
+            "day_of_week BETWEEN 0 AND 6",
+            name="ck_meeting_day_of_week",
+        ),
         UniqueConstraint("source_record_id", "day_of_week"),
     )
 
@@ -147,6 +157,13 @@ class AvailabilityInterval(Base):
     )
     term: Mapped["Term"] = relationship(
         back_populates="availability_intervals"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "day_of_week BETWEEN 0 AND 6",
+            name="ck_availability_interval_day_of_week",
+        ),
     )
 
 
