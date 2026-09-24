@@ -196,6 +196,20 @@ def test_term_create_rejects_a_taxonomy_id_already_in_use(cli, db: Session, caps
     assert db.query(Term).count() == 2
 
 
+def test_term_create_stores_the_canonical_source_url(cli, db: Session, capsys):
+    assert (
+        cli(
+            *_create_args(source_url="https://CLASSES.berkeley.edu/taxonomy/term/8573/")
+        )
+        == 0
+    )
+
+    assert db.query(Term).one().source_url == SOURCE_URL
+    capsys.readouterr()
+    assert cli("term", "list") == 0
+    assert SOURCE_URL in capsys.readouterr().out
+
+
 def test_term_list_with_no_terms(cli, capsys):
     assert cli("term", "list") == 0
 

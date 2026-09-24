@@ -735,3 +735,20 @@ def test_taxonomy_term_id_accepts_the_canonical_url(source_url: str, expected: i
 def test_taxonomy_term_id_rejects_anything_else(source_url: str | None):
     with pytest.raises(ValueError, match="is not a https://classes.berkeley.edu"):
         taxonomy_term_id(source_url)
+
+
+@pytest.mark.parametrize(
+    "source_url",
+    [
+        "https://classes.berkeley.edu/taxonomy/term/85\n73",
+        " https://classes.berkeley.edu/taxonomy/term/8573",
+        "https://classes.berkeley.edu/taxonomy/term/8573\t",
+        "\x01https://classes.berkeley.edu/taxonomy/term/8573",
+        "https://classes.berkeley.edu/taxonomy/te\x7frm/8573",
+        "https://classes.berkeley.edu/taxonomy/term/8573\u00a0",
+    ],
+)
+def test_taxonomy_term_id_rejects_hidden_characters(source_url: str):
+    """urlsplit strips or removes some of these, so they'd otherwise parse."""
+    with pytest.raises(ValueError, match="whitespace or control characters"):
+        taxonomy_term_id(source_url)

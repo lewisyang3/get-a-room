@@ -41,8 +41,17 @@ def taxonomy_term_id(source_url: str | None) -> int:
     Only the exact form https://classes.berkeley.edu/taxonomy/term/{id} is
     accepted. The fetcher always requests BASE_URL with just the id, so a
     looser check would let a mistyped host or path silently import
-    whatever Berkeley term that id happens to be.
+    whatever Berkeley term that id happens to be. Whitespace and control
+    characters are rejected outright, before urlsplit - which silently
+    strips or removes some of them (e.g. "85\n73" would parse as 8573).
     """
+    if source_url is not None and any(
+        ord(char) <= 32 or ord(char) == 127 or char.isspace() for char in source_url
+    ):
+        raise ValueError(
+            f"term source_url {source_url!r} contains whitespace or control "
+            "characters"
+        )
     base = urlsplit(BASE_URL)
     try:
         parts = urlsplit(source_url or "")
@@ -63,6 +72,11 @@ def taxonomy_term_id(source_url: str | None) -> int:
             f"{BASE_URL}/taxonomy/term/{{id}} URL"
         )
     return int(match.group(1))
+
+
+def canonical_source_url(taxonomy_id: int) -> str:
+    """The one spelling of a taxonomy term's URL that gets stored."""
+    return f"{BASE_URL}/taxonomy/term/{taxonomy_id}"
 
 
 def _building_short_code(name: str) -> str:

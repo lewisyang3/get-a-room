@@ -29,7 +29,12 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models.models import Term, TermStatus
 from ingestion.fetch import SectionSession, build_session
-from ingestion.persist import PARSER_VERSION_MAX_LENGTH, run_import, taxonomy_term_id
+from ingestion.persist import (
+    PARSER_VERSION_MAX_LENGTH,
+    canonical_source_url,
+    run_import,
+    taxonomy_term_id,
+)
 
 logger = logging.getLogger("ingestion.cli")
 
@@ -203,7 +208,9 @@ def _term_create(args: argparse.Namespace, db: Session) -> int:
         name=args.name,
         start_date=args.start,
         end_date=args.end,
-        source_url=args.source_url,
+        # Stored canonically, whatever harmless variant was typed (host
+        # case, a trailing slash).
+        source_url=canonical_source_url(new_taxonomy_id),
         status=TermStatus(args.status),
     )
     # Left unset without --timezone so the model's default applies.
