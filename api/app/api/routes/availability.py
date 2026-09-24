@@ -65,9 +65,7 @@ def get_available_rooms(
         end_datetime = datetime.combine(date.today(), interval.end_time)
 
         # Calculates the number of available minutes.
-        available_minutes = int(
-            (end_datetime - start_datetime).total_seconds() // 60
-        )
+        available_minutes = int((end_datetime - start_datetime).total_seconds() // 60)
 
         # Skips intervals shorter than the requested minimum.
         if available_minutes < minimum_minutes:

@@ -18,6 +18,7 @@ app.add_middleware(
 
 app.include_router(availability_router)
 
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}

@@ -49,7 +49,9 @@ def test_dis_with_room_end_time_plus_one_minute():
 
 
 def test_lec_general_assignment_has_no_room():
-    section = parse_section(_load("lec_general_assignment.html"), slug="lec-general-assignment")
+    section = parse_section(
+        _load("lec_general_assignment.html"), slug="lec-general-assignment"
+    )
 
     assert section.section_type == "LEC"
     assert section.building_name is None
@@ -59,7 +61,9 @@ def test_lec_general_assignment_has_no_room():
 
 
 def test_grp_missing_location_div_is_empty():
-    section = parse_section(_load("grp_missing_location.html"), slug="grp-missing-location")
+    section = parse_section(
+        _load("grp_missing_location.html"), slug="grp-missing-location"
+    )
 
     assert section.section_type == "GRP"
     assert section.building_name is None

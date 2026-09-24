@@ -27,7 +27,9 @@ def classify(section: ParsedSection) -> ParsedSection:
     Assignment"), so this is checked independently of the type filter.
     """
     if section.section_type not in ROOM_OCCUPYING_TYPES:
-        section.rejection_reason = f"section_type_not_room_occupying:{section.section_type}"
+        section.rejection_reason = (
+            f"section_type_not_room_occupying:{section.section_type}"
+        )
     elif not section.meetings:
         section.rejection_reason = "no_meetings"
     elif section.building_name is None or section.room_number is None:

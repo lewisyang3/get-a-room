@@ -23,21 +23,19 @@ def recompute_availability(
     The caller is responsible for committing or rolling back the transaction.
     Returns the number of intervals inserted.
     """
-    meetings = db.scalars(
-        select(Meeting).where(Meeting.term_id == term_id)
-    ).all()
+    meetings = db.scalars(select(Meeting).where(Meeting.term_id == term_id)).all()
     room_ids = db.scalars(select(Room.room_id).order_by(Room.room_id)).all()
 
-    booked_by_room_day: dict[tuple[int, int], list[tuple[time, time]]] = defaultdict(list)
+    booked_by_room_day: dict[tuple[int, int], list[tuple[time, time]]] = defaultdict(
+        list
+    )
     for meeting in meetings:
         booked_by_room_day[(meeting.room_id, meeting.day_of_week)].append(
             (meeting.start_time, meeting.end_time)
         )
 
     db.execute(
-        delete(AvailabilityInterval).where(
-            AvailabilityInterval.term_id == term_id
-        )
+        delete(AvailabilityInterval).where(AvailabilityInterval.term_id == term_id)
     )
 
     timestamp = computed_at or datetime.now(timezone.utc)

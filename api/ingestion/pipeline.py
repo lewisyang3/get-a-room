@@ -57,13 +57,17 @@ class IngestionPipeline:
                 # failure enumerating the term means we don't know what
                 # sections we missed - treating it as "run complete" would
                 # silently produce a truncated-but-looks-successful import.
-                logger.exception("failed to enumerate sections for term %s", taxonomy_term_id)
+                logger.exception(
+                    "failed to enumerate sections for term %s", taxonomy_term_id
+                )
                 raise
 
             self.stats.read += 1
             slug = path.removeprefix("/content/")
             try:
-                response = fetch(self.session, path, rate_limit_seconds=self.rate_limit_seconds)
+                response = fetch(
+                    self.session, path, rate_limit_seconds=self.rate_limit_seconds
+                )
             except FetchError as exc:
                 logger.warning("failed to fetch %s: %s", path, exc)
                 self.stats.failed += 1

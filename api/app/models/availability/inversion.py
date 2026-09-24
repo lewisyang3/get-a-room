@@ -27,8 +27,7 @@ def invert_intervals(
 
     # Clips meetings that extend before or after the daily window.
     clipped_intervals = [
-        (max(start, day_start), min(end, day_end))
-        for start, end in relevant_intervals
+        (max(start, day_start), min(end, day_end)) for start, end in relevant_intervals
     ]
 
     # Sorts meetings from earliest start time to latest.

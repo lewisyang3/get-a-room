@@ -71,9 +71,7 @@ class Building(Base):
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
     address: Mapped[str | None] = mapped_column(String(300))
-    included_in_coverage: Mapped[bool] = mapped_column(
-        default=True, nullable=False
-    )
+    included_in_coverage: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     rooms: Mapped[list["Room"]] = relationship(back_populates="building")
 
@@ -98,9 +96,7 @@ class Room(Base):
     )
 
     # Unique constraint to ensure that each room number is unique within a building
-    __table_args__ = (
-        UniqueConstraint("building_id", "room_number"),
-    )
+    __table_args__ = (UniqueConstraint("building_id", "room_number"),)
 
 
 class Meeting(Base):
@@ -109,13 +105,9 @@ class Meeting(Base):
     # primary key, unique identifier for the meeting
     meeting_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # foreign key to the room table, indicating which room the meeting is held in
-    room_id: Mapped[int] = mapped_column(
-        ForeignKey("room.room_id"), nullable=False
-    )
+    room_id: Mapped[int] = mapped_column(ForeignKey("room.room_id"), nullable=False)
     # foreign key to the term table, indicating which term the meeting is associated with
-    term_id: Mapped[int] = mapped_column(
-        ForeignKey("term.term_id"), nullable=False
-    )
+    term_id: Mapped[int] = mapped_column(ForeignKey("term.term_id"), nullable=False)
     day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)
     start_time: Mapped[time] = mapped_column(Time, nullable=False)
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
@@ -148,12 +140,8 @@ class AvailabilityInterval(Base):
     __tablename__ = "availability_interval"
 
     interval_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    room_id: Mapped[int] = mapped_column(
-        ForeignKey("room.room_id"), nullable=False
-    )
-    term_id: Mapped[int] = mapped_column(
-        ForeignKey("term.term_id"), nullable=False
-    )
+    room_id: Mapped[int] = mapped_column(ForeignKey("room.room_id"), nullable=False)
+    term_id: Mapped[int] = mapped_column(ForeignKey("term.term_id"), nullable=False)
     day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)
     start_time: Mapped[time] = mapped_column(Time, nullable=False)
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
@@ -162,12 +150,8 @@ class AvailabilityInterval(Base):
         DateTime(timezone=True), nullable=False
     )
 
-    room: Mapped["Room"] = relationship(
-        back_populates="availability_intervals"
-    )
-    term: Mapped["Term"] = relationship(
-        back_populates="availability_intervals"
-    )
+    room: Mapped["Room"] = relationship(back_populates="availability_intervals")
+    term: Mapped["Term"] = relationship(back_populates="availability_intervals")
 
     __table_args__ = (
         CheckConstraint(
@@ -181,15 +165,11 @@ class ImportRun(Base):
     __tablename__ = "import_run"
 
     import_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    term_id: Mapped[int] = mapped_column(
-        ForeignKey("term.term_id"), nullable=False
-    )
+    term_id: Mapped[int] = mapped_column(ForeignKey("term.term_id"), nullable=False)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True)
-    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source_url: Mapped[str] = mapped_column(String(500), nullable=False)
     source_hash: Mapped[str | None] = mapped_column(String(128))
     parser_version: Mapped[str | None] = mapped_column(String(50))
@@ -198,7 +178,5 @@ class ImportRun(Base):
     records_imported: Mapped[int] = mapped_column(Integer, default=0)
     records_rejected: Mapped[int] = mapped_column(Integer, default=0)
     records_failed: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[ImportStatus] = mapped_column(
-        SqlEnum(ImportStatus), nullable=False
-    )
+    status: Mapped[ImportStatus] = mapped_column(SqlEnum(ImportStatus), nullable=False)
     error_message: Mapped[str | None] = mapped_column(String(2000))
