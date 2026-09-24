@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import time
 from pathlib import Path
 
 import pytest
@@ -13,8 +13,8 @@ from app.models.models import (
     Meeting,
     Room,
     Term,
-    TermStatus,
 )
+from app.models.availability.inversion import invert_intervals
 from ingestion.fetch import FetchError
 from ingestion.persist import _retire_stale_meetings, persist_section, run_import
 from ingestion.types import ParsedMeeting, ParsedSection
@@ -116,12 +116,12 @@ def test_persist_section_reuses_building_and_room_across_sections(
     assert db.query(Meeting).count() == 2
 
 
-def test_persist_section_resolves_two_meetings_on_the_same_day_within_one_section(
+def test_persist_section_keeps_both_meetings_on_the_same_day_within_one_section(
     db: Session, term: Term
 ):
     """A section with two meeting-details blocks landing on the same day
     (parse_section's docstring notes this is a rare but real case) must
-    resolve to one Meeting row, not an IntegrityError."""
+    persist both blocks - keeping only one would make the other appear free."""
     same_day_twice = _section(
         meetings=[
             ParsedMeeting(day_of_week=0, start_time=time(14, 0), end_time=time(15, 0)),
@@ -130,14 +130,51 @@ def test_persist_section_resolves_two_meetings_on_the_same_day_within_one_sectio
     )
     persist_section(db, term.term_id, same_day_twice, set())
     db.commit()
+    # Re-persisting the same section is still idempotent.
+    persist_section(db, term.term_id, same_day_twice, set())
+    db.commit()
 
-    meetings = db.query(Meeting).filter_by(source_record_id="1", day_of_week=0).all()
-    assert len(meetings) == 1
-    assert meetings[0].start_time == time(16, 0)
-    assert meetings[0].end_time == time(17, 0)
+    meetings = (
+        db.query(Meeting)
+        .filter_by(source_record_id="1", day_of_week=0)
+        .order_by(Meeting.start_time)
+        .all()
+    )
+    booked = [(m.start_time, m.end_time) for m in meetings]
+    assert booked == [(time(14, 0), time(15, 0)), (time(16, 0), time(17, 0))]
+    assert invert_intervals(booked) == [
+        (time(7, 0), time(14, 0)),
+        (time(15, 0), time(16, 0)),
+        (time(17, 0), time(22, 0)),
+    ]
 
 
-def test_run_import_retires_a_meeting_day_dropped_from_a_still_present_section(
+def test_persist_section_drops_one_of_two_same_day_blocks(db: Session, term: Term):
+    persist_section(
+        db,
+        term.term_id,
+        _section(
+            meetings=[
+                ParsedMeeting(
+                    day_of_week=0, start_time=time(14, 0), end_time=time(15, 0)
+                ),
+                ParsedMeeting(
+                    day_of_week=0, start_time=time(16, 0), end_time=time(17, 0)
+                ),
+            ]
+        ),
+        set(),
+    )
+    db.commit()
+
+    persist_section(db, term.term_id, _section(), set())
+    db.commit()
+
+    meeting = db.query(Meeting).filter_by(source_record_id="1").one()
+    assert (meeting.start_time, meeting.end_time) == (time(14, 0), time(15, 0))
+
+
+def test_persist_section_removes_a_meeting_day_dropped_from_a_still_present_section(
     db: Session, term: Term
 ):
     two_days = _section(
@@ -146,8 +183,7 @@ def test_run_import_retires_a_meeting_day_dropped_from_a_still_present_section(
             ParsedMeeting(day_of_week=2, start_time=time(14, 0), end_time=time(15, 0)),
         ]
     )
-    seen: set[tuple[str, int]] = set()
-    persist_section(db, term.term_id, two_days, seen)
+    persist_section(db, term.term_id, two_days, set())
     db.commit()
     assert db.query(Meeting).filter_by(source_record_id="1").count() == 2
 
@@ -156,9 +192,8 @@ def test_run_import_retires_a_meeting_day_dropped_from_a_still_present_section(
             ParsedMeeting(day_of_week=0, start_time=time(14, 0), end_time=time(15, 0))
         ]
     )
-    seen = set()
-    persist_section(db, term.term_id, one_day, seen)
-    _retire_stale_meetings(db, term.term_id, seen)
+    # No run-wide stale pass needed - the section itself is authoritative.
+    persist_section(db, term.term_id, one_day, set())
     db.commit()
 
     remaining = db.query(Meeting).filter_by(source_record_id="1").all()
@@ -172,7 +207,7 @@ def test_run_import_retires_a_section_that_disappears(db: Session, term: Term):
     assert db.query(Meeting).count() == 2
 
     # Only section "1" is seen on this run - section "2" vanished.
-    seen = {("1", 0)}
+    seen = {"1"}
     _retire_stale_meetings(db, term.term_id, seen)
     db.commit()
 
@@ -333,40 +368,76 @@ def test_run_import_skips_stale_retirement_when_a_section_fails(
     assert db.query(Meeting).filter_by(source_record_id="old").count() == 1
 
 
-def test_run_import_marks_failed_without_pending_rollback_error(
+def test_run_import_applies_a_changed_section_even_when_another_section_fails(
     db: Session, term: Term
 ):
-    """An IntegrityError mid-run (e.g. a duplicate Meeting insert) must
-    still leave the ImportRun FAILED, not stuck RUNNING or masked by a
-    PendingRollbackError from committing a poisoned session."""
-    other_term = Term(
-        name="Spring 2026",
-        start_date=date(2026, 1, 20),
-        end_date=date(2026, 5, 15),
-        status=TermStatus.ACTIVE,
-    )
-    db.add(other_term)
-    db.commit()
-
-    # Pre-existing Meeting under a *different* term, keyed by the same
-    # (source_record_id, day_of_week) the fixture below will parse to
-    # ("482493", 4 - lec_with_room.html's data-history-node-id and Friday
-    # meeting day) - the upcoming run's insert for that key collides at the
-    # DB level (Meeting's real unique constraint has no term_id).
+    """A section that parses fine this run is reconciled on its own, so a
+    changed meeting time isn't left stale just because some other section
+    failed and the run-wide stale pass was skipped."""
+    # lec_with_room.html parses to source_record_id "482493", Friday.
     persist_section(
         db,
-        other_term.term_id,
+        term.term_id,
         _section(
             source_record_id="482493",
             meetings=[
-                ParsedMeeting(
-                    day_of_week=4, start_time=time(14, 0), end_time=time(15, 0)
-                )
+                ParsedMeeting(day_of_week=4, start_time=time(7, 0), end_time=time(8, 0))
             ],
         ),
         set(),
     )
     db.commit()
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        if path.startswith("/taxonomy/term/"):
+            page = (params or {}).get("page", 0)
+            pages = {
+                0: '<a href="/content/lec-with-room">A</a><a href="/content/broken">B</a>',
+                1: "",
+            }
+            return FakeResponse(200, text=pages.get(page, ""))
+        if path == "/content/lec-with-room":
+            return FakeResponse(200, text=(FIXTURES / "lec_with_room.html").read_text())
+        return FakeResponse(404)
+
+    result = run_import(
+        db,
+        FakeSession(handler),
+        term.term_id,
+        source_url="https://classes.berkeley.edu/taxonomy/term/8573",
+        rate_limit_seconds=0,
+    )
+
+    assert result.records_failed == 1
+    meetings = db.query(Meeting).filter_by(source_record_id="482493").all()
+    assert len(meetings) == 1
+    assert meetings[0].start_time != time(7, 0)
+
+
+def test_run_import_marks_failed_without_pending_rollback_error(
+    db: Session, term: Term, monkeypatch: pytest.MonkeyPatch
+):
+    """An IntegrityError mid-run must still leave the ImportRun FAILED, not
+    stuck RUNNING or masked by a PendingRollbackError from committing a
+    poisoned session."""
+    persist_section(db, term.term_id, _section(source_record_id="prior"), set())
+    db.commit()
+
+    def violate_check_constraint(db, term_id, section, *args):
+        db.add(
+            Meeting(
+                room_id=db.query(Room).first().room_id,
+                term_id=term_id,
+                day_of_week=9,
+                start_time=time(9, 0),
+                end_time=time(10, 0),
+                meeting_type="LEC",
+                source_record_id=section.source_record_id,
+            )
+        )
+        db.flush()
+
+    monkeypatch.setattr("ingestion.persist.persist_section", violate_check_constraint)
 
     def handler(path: str, params: dict | None) -> FakeResponse:
         if path.startswith("/taxonomy/term/"):
@@ -387,10 +458,8 @@ def test_run_import_marks_failed_without_pending_rollback_error(
     import_run = db.query(ImportRun).filter_by(term_id=term.term_id).one()
     assert import_run.status == ImportStatus.FAILED
     assert import_run.completed_at is not None
-    # The other term's original meeting must survive untouched.
-    assert db.query(Meeting).filter_by(term_id=other_term.term_id).count() == 1
-    # Nothing from this failed run's own work was left half-committed.
-    assert db.query(Meeting).filter_by(term_id=term.term_id).count() == 0
+    # The prior committed meeting survives; nothing from the failed run does.
+    assert [m.source_record_id for m in db.query(Meeting).all()] == ["prior"]
 
 
 def test_persist_section_caches_building_and_room_lookups_within_a_run(
