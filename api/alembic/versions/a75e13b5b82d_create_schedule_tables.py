@@ -140,3 +140,7 @@ def downgrade() -> None:
     op.drop_table("term")
     op.drop_table("building")
     # ### end Alembic commands ###
+    # Autogenerate doesn't drop the Postgres enum types create_table made -
+    # left behind, a later upgrade fails with "type already exists".
+    sa.Enum(name="importstatus").drop(op.get_bind(), checkfirst=True)
+    sa.Enum(name="termstatus").drop(op.get_bind(), checkfirst=True)
