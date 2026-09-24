@@ -134,7 +134,8 @@ def test_term_create_rejects_a_non_taxonomy_source_url(
 
 
 @pytest.mark.parametrize(
-    "timezone", ["America", "posixrules", "Factory", "Mars/Olympus_Mons", ""]
+    "timezone",
+    ["America", "posixrules", "Factory", "localtime", "Mars/Olympus_Mons", ""],
 )
 def test_term_create_rejects_a_non_location_timezone(
     cli, db: Session, capsys, timezone

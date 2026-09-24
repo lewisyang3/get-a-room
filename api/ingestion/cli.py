@@ -47,6 +47,7 @@ _STATUS_CHOICES = [status.value for status in TermStatus]
 # Validated here so an overlong value is a usage error, not a DataError.
 _TERM_NAME_MAX_LENGTH = Term.__table__.c.name.type.length
 _SOURCE_URL_MAX_LENGTH = Term.__table__.c.source_url.type.length
+_NON_LOCATION_ZONES = {"Factory", "localtime"}
 
 
 class CliError(Exception):
@@ -102,8 +103,9 @@ def _iso_date(value: str) -> date:
 def _timezone(value: str) -> str:
     # A set lookup rather than ZoneInfo(value): ZoneInfo("America") raises
     # IsADirectoryError, and it accepts non-zones like "posixrules".
-    # "Factory" is a real tzdata entry but a placeholder, not a location.
-    if value == "Factory" or value not in available_timezones():
+    # "Factory" (tzdata's placeholder) and "localtime" (Debian's alias for
+    # the host's own zone) are listed but aren't locations.
+    if value in _NON_LOCATION_ZONES or value not in available_timezones():
         raise argparse.ArgumentTypeError(f"unknown timezone {value!r}")
     return value
 
