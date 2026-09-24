@@ -34,10 +34,12 @@ class IngestionPipeline:
         *,
         rate_limit_seconds: float,
         max_pages: int = 5000,
+        progress_every: int = 100,
     ):
         self.session = session
         self.rate_limit_seconds = rate_limit_seconds
         self.max_pages = max_pages
+        self.progress_every = progress_every
         self.stats = PipelineStats()
 
     def run(self, taxonomy_term_id: int) -> Iterator[ParsedSection]:
@@ -47,7 +49,19 @@ class IngestionPipeline:
             rate_limit_seconds=self.rate_limit_seconds,
             max_pages=self.max_pages,
         )
+        logger.info("enumerating sections for taxonomy term %s", taxonomy_term_id)
         while True:
+            # Top of the loop: the previous section is fully handled,
+            # including whatever the consumer did with it after the yield.
+            if self.stats.read and self.stats.read % self.progress_every == 0:
+                logger.info(
+                    "progress: %d sections read (%d accepted, %d rejected, "
+                    "%d failed)",
+                    self.stats.read,
+                    self.stats.accepted,
+                    self.stats.rejected,
+                    self.stats.failed,
+                )
             try:
                 path = next(section_paths)
             except StopIteration:
