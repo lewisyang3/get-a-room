@@ -27,7 +27,7 @@ class ImportAborted(Exception):
 _TAXONOMY_TERM_RE = re.compile(r"/taxonomy/term/(\d+)/?(?:[?#]|$)")
 
 
-def _taxonomy_term_id(source_url: str | None) -> int:
+def taxonomy_term_id(source_url: str | None) -> int:
     """Extracts Berkeley's taxonomy term id from a Term's source_url.
 
     The database's Term.term_id and Berkeley's taxonomy id (e.g. 8573) are
@@ -237,7 +237,7 @@ def run_import(
     if term is None:
         raise ValueError(f"term {term_id} does not exist")
     source_url = term.source_url
-    taxonomy_term_id = _taxonomy_term_id(source_url)
+    taxonomy_id = taxonomy_term_id(source_url)
 
     pipeline = IngestionPipeline(
         session, rate_limit_seconds=rate_limit_seconds, max_pages=max_pages
@@ -263,12 +263,12 @@ def run_import(
     building_cache: _BuildingCache = {}
     room_cache: _RoomCache = {}
     try:
-        for section in pipeline.run(taxonomy_term_id):
+        for section in pipeline.run(taxonomy_id):
             if is_accepted(section):
                 persist_section(db, term_id, section, seen, building_cache, room_cache)
         if pipeline.stats.read == 0:
             raise ImportAborted(
-                f"enumeration of taxonomy term {taxonomy_term_id} returned no sections"
+                f"enumeration of taxonomy term {taxonomy_id} returned no sections"
             )
         if pipeline.stats.failed:
             logger.warning(
