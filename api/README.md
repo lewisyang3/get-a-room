@@ -56,7 +56,9 @@ Keep migrations linear (one head) and make every `downgrade()` fully undo its
 
 Imports are run by hand with the operator CLI (`python -m ingestion.cli --help`).
 With the database migrated, create the term once, pointing it at the term's
-page on classes.berkeley.edu (`/taxonomy/term/{id}`), then import it:
+page on classes.berkeley.edu, then import it. The source URL must be exactly
+`https://classes.berkeley.edu/taxonomy/term/{id}`, and each taxonomy id can
+belong to only one term:
 
 ```bash
 python -m ingestion.cli term create --name "Fall 2026" \
@@ -67,7 +69,8 @@ python -m ingestion.cli import run "Fall 2026"
 ```
 
 Terms can be referred to by id or exact name. `term create` also takes
-`--timezone` (default `America/Los_Angeles`) and `--status active|archived`;
+`--timezone` (an IANA zone; default `America/Los_Angeles`) and
+`--status active|archived`;
 `term set-status "Fall 2026" archived` retires a term, after which
 `import run` refuses it unless given `--allow-archived`.
 
@@ -76,9 +79,9 @@ e.g. `docker compose run --rm api python -m ingestion.cli term list`.
 
 `import run` scrapes every section in the term, one request per
 `SCRAPER_RATE_LIMIT_SECONDS` (a full term is thousands of requests - expect it
-to take a while), logs progress every 100 sections, and records the run as an
-`ImportRun`. Re-running is safe: meetings are upserted, and ones the term no
-longer lists are removed. Options:
+to take a while), logs progress every 100 sections, recomputes the term's
+availability, and records the run as an `ImportRun`. Re-running is safe:
+meetings are upserted, and ones the term no longer lists are removed. Options:
 
 - `--max-retire-fraction F` (default `0.5`) — abort, keeping the existing
   data, if the run would remove more than this fraction of the term's
@@ -87,16 +90,18 @@ longer lists are removed. Options:
 - `--max-pages N` (default `5000`) — fail instead of paging the term listing
   forever.
 - `--rate-limit-seconds S` — override `SCRAPER_RATE_LIMIT_SECONDS`.
-- `--parser-version V` — recorded on the `ImportRun` for debugging.
+- `--parser-version V` — recorded on the `ImportRun` for debugging (at most 50
+  characters).
 
 Exit codes, for scripts and schedulers:
 
 | Code | Meaning |
 |---|---|
 | 0 | Import completed. |
-| 1 | Import failed or aborted. A `FAILED` `ImportRun` is recorded, and the previously imported data is left untouched. |
+| 1 | Import failed or aborted, and the previously imported data is left untouched. A `FAILED` `ImportRun` is recorded, unless the database itself was unreachable; the log then says `import (not recorded)` and includes the traceback. |
 | 2 | Usage error: bad arguments, unknown or archived term, or a term without a usable source URL. Nothing ran. |
 | 3 | Import completed, but some sections failed to fetch or parse, so removal of classes that disappeared was skipped. Re-run once the source recovers. |
+| 130, 143 | Interrupted by Ctrl-C (130) or SIGTERM (143, e.g. `docker stop` or a scheduler timeout). Handled like exit 1: a `FAILED` `ImportRun` is recorded and previous data is untouched. A `SIGKILL` can't be handled and leaves no record. |
 
 ## Running tests and lint locally
 
