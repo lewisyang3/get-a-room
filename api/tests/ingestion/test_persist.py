@@ -20,6 +20,7 @@ from ingestion.persist import (
     _retire_stale_meetings,
     persist_section,
     run_import,
+    taxonomy_term_id,
 )
 from ingestion.types import ParsedMeeting
 from tests.ingestion.conftest import (
@@ -697,3 +698,40 @@ def test_run_import_reraises_the_original_error_if_recording_it_fails(
     assert not hasattr(exc_info.value, "import_run_id")
     assert "could not record the FAILED ImportRun" in caplog.text
     assert db.query(ImportRun).count() == 0
+
+
+@pytest.mark.parametrize(
+    "source_url, expected",
+    [
+        ("https://classes.berkeley.edu/taxonomy/term/8573", 8573),
+        ("https://classes.berkeley.edu/taxonomy/term/8573/", 8573),
+        ("https://CLASSES.berkeley.edu/taxonomy/term/8573", 8573),
+    ],
+)
+def test_taxonomy_term_id_accepts_the_canonical_url(source_url: str, expected: int):
+    assert taxonomy_term_id(source_url) == expected
+
+
+@pytest.mark.parametrize(
+    "source_url",
+    [
+        None,
+        "",
+        "http://classes.berkeley.edu/taxonomy/term/8573",
+        "https://evil.example/taxonomy/term/8573",
+        "https://classes.berkeley.edu.evil.example/taxonomy/term/8573",
+        "https://classes.berkeley.edu:8443/taxonomy/term/8573",
+        "https://user@classes.berkeley.edu/taxonomy/term/8573",
+        "https://classes.berkeley.edu/foo?next=/taxonomy/term/5",
+        "https://classes.berkeley.edu/taxonomy/term/8573?page=2",
+        "https://classes.berkeley.edu/taxonomy/term/8573#top",
+        "https://classes.berkeley.edu/foo/taxonomy/term/8573",
+        "https://classes.berkeley.edu/taxonomy/term/8573/extra",
+        "https://classes.berkeley.edu/taxonomy/term/85x",
+        "https://classes.berkeley.edu/taxonomy/term/\u0668\u0665",
+        "https://[classes.berkeley.edu/taxonomy/term/8573",
+    ],
+)
+def test_taxonomy_term_id_rejects_anything_else(source_url: str | None):
+    with pytest.raises(ValueError, match="is not a https://classes.berkeley.edu"):
+        taxonomy_term_id(source_url)

@@ -3,12 +3,13 @@ import hashlib
 import logging
 import re
 from datetime import datetime, time, timezone
+from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
 from app.models.availability.recompute import recompute_availability
 from app.models.models import Building, ImportRun, ImportStatus, Meeting, Room, Term
-from ingestion.fetch import SectionSession
+from ingestion.fetch import BASE_URL, SectionSession
 from ingestion.filter import is_accepted
 from ingestion.pipeline import IngestionPipeline
 from ingestion.types import ParsedSection
@@ -28,7 +29,7 @@ class ImportAborted(Exception):
 
 PARSER_VERSION_MAX_LENGTH = ImportRun.__table__.c.parser_version.type.length
 
-_TAXONOMY_TERM_RE = re.compile(r"/taxonomy/term/(\d+)/?(?:[?#]|$)")
+_TAXONOMY_PATH_RE = re.compile(r"/taxonomy/term/([0-9]+)/?")
 
 
 def taxonomy_term_id(source_url: str | None) -> int:
@@ -36,12 +37,30 @@ def taxonomy_term_id(source_url: str | None) -> int:
 
     The database's Term.term_id and Berkeley's taxonomy id (e.g. 8573) are
     unrelated numbers - the scrape must always go by the latter.
+
+    Only the exact form https://classes.berkeley.edu/taxonomy/term/{id} is
+    accepted. The fetcher always requests BASE_URL with just the id, so a
+    looser check would let a mistyped host or path silently import
+    whatever Berkeley term that id happens to be.
     """
-    match = _TAXONOMY_TERM_RE.search(source_url or "")
+    base = urlsplit(BASE_URL)
+    try:
+        parts = urlsplit(source_url or "")
+    except ValueError:
+        parts = None
+    match = (
+        _TAXONOMY_PATH_RE.fullmatch(parts.path)
+        if parts is not None
+        and parts.scheme == base.scheme
+        and parts.netloc.lower() == base.netloc
+        and not parts.query
+        and not parts.fragment
+        else None
+    )
     if match is None:
         raise ValueError(
-            f"term source_url {source_url!r} is not a classes.berkeley.edu "
-            "/taxonomy/term/{id} URL"
+            f"term source_url {source_url!r} is not a "
+            f"{BASE_URL}/taxonomy/term/{{id}} URL"
         )
     return int(match.group(1))
 
