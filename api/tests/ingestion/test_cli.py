@@ -131,6 +131,69 @@ def test_term_create_rejects_a_non_taxonomy_source_url(
     assert db.query(Term).count() == 0
 
 
+@pytest.mark.parametrize(
+    "timezone", ["America", "posixrules", "Factory", "Mars/Olympus_Mons", ""]
+)
+def test_term_create_rejects_a_non_location_timezone(
+    cli, db: Session, capsys, timezone
+):
+    assert cli(*_create_args() + ["--timezone", timezone]) == 2
+
+    err = capsys.readouterr().err
+    assert "unknown timezone" in err
+    assert "Traceback" not in err
+    assert db.query(Term).count() == 0
+
+
+@pytest.mark.parametrize(
+    "name, message",
+    [("   ", "can't be blank"), ("N" * 101, "the limit is 100")],
+)
+def test_term_create_rejects_a_blank_or_overlong_name(
+    cli, db: Session, capsys, name, message
+):
+    assert cli(*_create_args(name=name)) == 2
+
+    assert message in capsys.readouterr().err
+    assert db.query(Term).count() == 0
+
+
+def test_term_create_strips_the_name(cli, db: Session, capsys):
+    assert cli(*_create_args(name="  Fall 2026 ")) == 0
+    assert db.query(Term).one().name == "Fall 2026"
+    capsys.readouterr()
+
+    # Same name once stripped - a duplicate, even with a different taxonomy id.
+    other_url = "https://classes.berkeley.edu/taxonomy/term/8600"
+    assert cli(*_create_args(name="Fall 2026 ", source_url=other_url)) == 2
+    assert "already exists" in capsys.readouterr().err
+    # And lookups strip too.
+    assert cli("term", "set-status", "Fall 2026 ", "archived") == 0
+
+
+def test_term_create_rejects_an_overlong_source_url(cli, db: Session, capsys):
+    long_url = "https://classes.berkeley.edu/taxonomy/term/" + "1" * 460
+
+    assert cli(*_create_args(source_url=long_url)) == 2
+
+    assert "the limit is 500" in capsys.readouterr().err
+    assert db.query(Term).count() == 0
+
+
+def test_term_create_rejects_a_taxonomy_id_already_in_use(cli, db: Session, capsys):
+    assert cli(*_create_args()) == 0
+    capsys.readouterr()
+
+    # Same taxonomy id, spelled differently (trailing slash, host case).
+    same_term = "https://CLASSES.berkeley.edu/taxonomy/term/8573/"
+    assert cli(*_create_args(name="Fall 2026 copy", source_url=same_term)) == 2
+    assert "already uses taxonomy term 8573" in capsys.readouterr().err
+
+    other_url = "https://classes.berkeley.edu/taxonomy/term/8600"
+    assert cli(*_create_args(name="Spring 2027", source_url=other_url)) == 0
+    assert db.query(Term).count() == 2
+
+
 def test_term_list_with_no_terms(cli, capsys):
     assert cli("term", "list") == 0
 
@@ -138,7 +201,15 @@ def test_term_list_with_no_terms(cli, capsys):
 
 
 def test_term_list_orders_terms_by_start_date(cli, capsys):
-    cli(*_create_args(name="Spring 2027", start="2027-01-20", end="2027-05-15"))
+    spring_url = "https://classes.berkeley.edu/taxonomy/term/8600"
+    cli(
+        *_create_args(
+            name="Spring 2027",
+            start="2027-01-20",
+            end="2027-05-15",
+            source_url=spring_url,
+        )
+    )
     cli(*_create_args(name="Fall 2026"))
     capsys.readouterr()
 

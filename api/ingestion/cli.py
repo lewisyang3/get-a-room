@@ -15,7 +15,7 @@ import sys
 import time
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, timezone
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import available_timezones
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -35,6 +35,9 @@ EXIT_USAGE = 2
 EXIT_PARTIAL = 3
 
 _STATUS_CHOICES = [status.value for status in TermStatus]
+# Validated here so an overlong value is a usage error, not a DataError.
+_TERM_NAME_MAX_LENGTH = Term.__table__.c.name.type.length
+_SOURCE_URL_MAX_LENGTH = Term.__table__.c.source_url.type.length
 
 
 class CliError(Exception):
@@ -51,14 +54,32 @@ def _iso_date(value: str) -> date:
 
 
 def _timezone(value: str) -> str:
-    try:
-        ZoneInfo(value)
-    except (ZoneInfoNotFoundError, ValueError):
-        raise argparse.ArgumentTypeError(f"unknown timezone {value!r}") from None
+    # A set lookup rather than ZoneInfo(value): ZoneInfo("America") raises
+    # IsADirectoryError, and it accepts non-zones like "posixrules".
+    # "Factory" is a real tzdata entry but a placeholder, not a location.
+    if value == "Factory" or value not in available_timezones():
+        raise argparse.ArgumentTypeError(f"unknown timezone {value!r}")
     return value
 
 
+def _term_name(value: str) -> str:
+    name = value.strip()
+    if not name:
+        raise argparse.ArgumentTypeError("term name can't be blank")
+    if len(name) > _TERM_NAME_MAX_LENGTH:
+        raise argparse.ArgumentTypeError(
+            f"term name is {len(name)} characters; the limit is "
+            f"{_TERM_NAME_MAX_LENGTH}"
+        )
+    return name
+
+
 def _source_url(value: str) -> str:
+    if len(value) > _SOURCE_URL_MAX_LENGTH:
+        raise argparse.ArgumentTypeError(
+            f"source URL is {len(value)} characters; the limit is "
+            f"{_SOURCE_URL_MAX_LENGTH}"
+        )
     try:
         taxonomy_term_id(value)
     except ValueError:
@@ -103,6 +124,7 @@ def _fraction(value: str) -> float:
 
 def _resolve_term(db: Session, ref: str) -> Term:
     """Finds a term by numeric id, falling back to an exact name match."""
+    ref = ref.strip()  # names are stored stripped
     term = db.get(Term, int(ref)) if ref.isdigit() else None
     if term is None:
         term = db.scalars(select(Term).where(Term.name == ref)).one_or_none()
@@ -118,6 +140,19 @@ def _term_create(args: argparse.Namespace, db: Session) -> int:
     existing = db.scalars(select(Term).where(Term.name == args.name)).one_or_none()
     if existing is not None:
         raise CliError(f"{duplicate_error} (id {existing.term_id})")
+    # Two terms scraping the same taxonomy id would import the same sections
+    # twice under different term_ids, duplicating meetings and availability.
+    new_taxonomy_id = taxonomy_term_id(args.source_url)
+    for other in db.scalars(select(Term)):
+        try:
+            other_taxonomy_id = taxonomy_term_id(other.source_url)
+        except ValueError:
+            continue  # unimportable anyway, so it can't collide
+        if other_taxonomy_id == new_taxonomy_id:
+            raise CliError(
+                f"term {other.term_id} ({other.name}) already uses taxonomy "
+                f"term {new_taxonomy_id}"
+            )
 
     term = Term(
         name=args.name,
@@ -296,7 +331,9 @@ def build_parser() -> argparse.ArgumentParser:
     term_commands = term.add_subparsers(dest="term_command", required=True)
 
     create = term_commands.add_parser("create", help="create a term")
-    create.add_argument("--name", required=True, help='e.g. "Fall 2026"')
+    create.add_argument(
+        "--name", required=True, type=_term_name, help='e.g. "Fall 2026"'
+    )
     create.add_argument("--start", required=True, type=_iso_date, help="YYYY-MM-DD")
     create.add_argument("--end", required=True, type=_iso_date, help="YYYY-MM-DD")
     create.add_argument(
