@@ -101,7 +101,16 @@ Exit codes, for scripts and schedulers:
 | 1 | Import failed or aborted, and the previously imported data is left untouched. A `FAILED` `ImportRun` is recorded, unless the database itself was unreachable; the log then says `import (not recorded)` and includes the traceback. |
 | 2 | Usage error: bad arguments, unknown or archived term, or a term without a usable source URL. Nothing ran. |
 | 3 | Import completed, but some sections failed to fetch or parse, so removal of classes that disappeared was skipped. Re-run once the source recovers. |
-| 130, 143 | Interrupted by Ctrl-C (130) or SIGTERM (143, e.g. `docker stop` or a scheduler timeout). Handled like exit 1: a `FAILED` `ImportRun` is recorded and previous data is untouched. A `SIGKILL` can't be handled and leaves no record. |
+| 130, 143 | Interrupted by Ctrl-C (130) or SIGTERM (143, e.g. `docker stop` or a scheduler timeout). Handled like exit 1: a `FAILED` `ImportRun` is recorded and previous data is untouched. See the note below. |
+
+A `FAILED` run is recorded for an interrupt only once the signal is actually
+handled. A request already in flight has to finish first, which can take up to
+`SCRAPER_TIMEOUT_SECONDS` (30s by default). Anything that escalates to
+`SIGKILL` before then - including `docker stop`, which waits only 10s by
+default - kills the import with no record, since `SIGKILL` can't be handled.
+Give whatever stops an import a longer grace period than the request timeout:
+for example `docker stop -t 60`, `stop_grace_period: 60s` in Compose, or your
+scheduler's equivalent.
 
 ## Running tests and lint locally
 

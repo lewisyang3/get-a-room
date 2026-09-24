@@ -69,6 +69,11 @@ def _interrupt_on_sigterm() -> Iterator[None]:
     so no FAILED ImportRun would be recorded. The previous handler is
     restored on exit. signal.signal only works in the main thread; elsewhere
     this is a no-op.
+
+    Python only runs the handler between bytecodes, so a signal that lands
+    during a blocking libcurl request waits for it to return - up to
+    SCRAPER_TIMEOUT_SECONDS. A supervisor that escalates to SIGKILL sooner
+    (docker stop's default is 10s) kills the process with no record.
     """
 
     def handler(signum: int, frame: object) -> None:

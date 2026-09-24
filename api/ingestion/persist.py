@@ -356,6 +356,10 @@ def run_import(
         import_run.records_failed = pipeline.stats.failed
         db.commit()
     except (Exception, KeyboardInterrupt) as exc:
+        # Known narrow window: an interrupt that lands after the server has
+        # committed the COMPLETED run but before commit() returns ends up
+        # here too, so a FAILED row is added beside the COMPLETED one.
+        # Accepted as rare rather than worked around.
         logger.exception("import run for term %s failed", term_id)
         try:
             db.rollback()
