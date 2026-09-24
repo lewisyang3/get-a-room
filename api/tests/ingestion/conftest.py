@@ -1,3 +1,4 @@
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -83,15 +84,17 @@ def db_engine():
     configured database - see `_test_database_url`'s docstring for why.
     Skips cleanly (rather than failing) when the Postgres server itself
     isn't reachable, so `pytest` still works for anyone not running
-    `docker compose up db`.
+    `docker compose up db` - unless REQUIRE_TEST_DB=1 (set in CI), where a
+    skip would turn a broken database service into a green run.
     """
     test_url = _test_database_url(get_settings().database_url)
     try:
         _ensure_database_exists(test_url)
     except OperationalError as exc:
-        pytest.skip(
-            f"Postgres not reachable at {test_url} - run `docker compose up db -d`: {exc}"
-        )
+        message = f"Postgres not reachable at {test_url} - run `docker compose up db -d`: {exc}"
+        if os.environ.get("REQUIRE_TEST_DB") == "1":
+            pytest.fail(message)
+        pytest.skip(message)
 
     engine = create_engine(test_url)
     Base.metadata.create_all(engine)
