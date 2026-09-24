@@ -244,7 +244,6 @@ def test_run_import_end_to_end(db: Session, term: Term):
         db,
         session,
         term.term_id,
-        source_url="https://classes.berkeley.edu/taxonomy/term/8573",
         rate_limit_seconds=0,
     )
 
@@ -259,6 +258,48 @@ def test_run_import_end_to_end(db: Session, term: Term):
     assert meeting.meeting_type == "LEC"
 
 
+def test_run_import_scrapes_the_terms_taxonomy_id_not_its_db_id(
+    db: Session, term: Term
+):
+    """The DB's term_id and Berkeley's taxonomy id are unrelated numbers -
+    the scrape must go by the term's source_url."""
+    assert term.term_id != 8573
+    session = FakeSession(_pipeline_handler)
+
+    result = run_import(db, session, term.term_id, rate_limit_seconds=0)
+
+    taxonomy_paths = {
+        path for path, _ in session.calls if path.startswith("/taxonomy/term/")
+    }
+    assert taxonomy_paths == {"/taxonomy/term/8573"}
+    assert result.source_url == term.source_url
+
+
+@pytest.mark.parametrize(
+    "source_url",
+    [None, "https://classes.berkeley.edu/search/class", "https://x/taxonomy/term/85x"],
+)
+def test_run_import_rejects_a_term_without_a_usable_source_url(
+    db: Session, term: Term, source_url: str | None
+):
+    term.source_url = source_url
+    db.commit()
+    session = FakeSession(_pipeline_handler)
+
+    with pytest.raises(ValueError, match="source_url"):
+        run_import(db, session, term.term_id, rate_limit_seconds=0)
+
+    assert session.calls == []
+    assert db.query(ImportRun).count() == 0
+
+
+def test_run_import_rejects_a_missing_term(db: Session):
+    with pytest.raises(ValueError, match="does not exist"):
+        run_import(db, FakeSession(_pipeline_handler), 999_999, rate_limit_seconds=0)
+
+    assert db.query(ImportRun).count() == 0
+
+
 def test_run_import_records_enumeration_failure_and_reraises(db: Session, term: Term):
     def handler(path: str, params: dict | None) -> FakeResponse:
         assert path.startswith("/taxonomy/term/")
@@ -271,7 +312,6 @@ def test_run_import_records_enumeration_failure_and_reraises(db: Session, term: 
             db,
             session,
             term.term_id,
-            source_url="https://classes.berkeley.edu/taxonomy/term/8573",
             rate_limit_seconds=0,
         )
 
@@ -301,7 +341,6 @@ def test_run_import_records_zero_imported_on_a_failure_after_partial_success(
             db,
             FakeSession(handler),
             term.term_id,
-            source_url="https://classes.berkeley.edu/taxonomy/term/8573",
             rate_limit_seconds=0,
         )
 
@@ -357,7 +396,6 @@ def test_run_import_skips_stale_retirement_when_a_section_fails(
         db,
         FakeSession(handler),
         term.term_id,
-        source_url="https://classes.berkeley.edu/taxonomy/term/8573",
         rate_limit_seconds=0,
     )
 
@@ -404,7 +442,6 @@ def test_run_import_applies_a_changed_section_even_when_another_section_fails(
         db,
         FakeSession(handler),
         term.term_id,
-        source_url="https://classes.berkeley.edu/taxonomy/term/8573",
         rate_limit_seconds=0,
     )
 
@@ -451,7 +488,6 @@ def test_run_import_marks_failed_without_pending_rollback_error(
             db,
             FakeSession(handler),
             term.term_id,
-            source_url="https://classes.berkeley.edu/taxonomy/term/8573",
             rate_limit_seconds=0,
         )
 

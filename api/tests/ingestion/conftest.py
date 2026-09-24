@@ -13,6 +13,9 @@ from app.db import Base
 from app.models.models import Term, TermStatus
 
 
+TERM_SOURCE_URL = "https://classes.berkeley.edu/taxonomy/term/8573"
+
+
 @dataclass
 class FakeResponse:
     status_code: int
@@ -127,6 +130,7 @@ def term(db: Session) -> Term:
         name="Fall 2025",
         start_date=date(2025, 8, 27),
         end_date=date(2025, 12, 12),
+        source_url=TERM_SOURCE_URL,
         status=TermStatus.ACTIVE,
     )
     db.add(term)

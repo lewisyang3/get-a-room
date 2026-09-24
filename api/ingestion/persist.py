@@ -5,7 +5,7 @@ from datetime import datetime, time, timezone
 
 from sqlalchemy.orm import Session
 
-from app.models.models import Building, ImportRun, ImportStatus, Meeting, Room
+from app.models.models import Building, ImportRun, ImportStatus, Meeting, Room, Term
 from ingestion.fetch import SectionSession
 from ingestion.filter import is_accepted
 from ingestion.pipeline import IngestionPipeline
@@ -18,6 +18,23 @@ logger = logging.getLogger(__name__)
 # isn't unique - two same-day blocks (e.g. 14:00-15:00 and 16:00-17:00)
 # are two distinct Meeting rows. Mirrors Meeting's DB unique constraint.
 _MeetingKey = tuple[int, int, time, time]  # (room_id, day_of_week, start, end)
+
+_TAXONOMY_TERM_RE = re.compile(r"/taxonomy/term/(\d+)/?(?:[?#]|$)")
+
+
+def _taxonomy_term_id(source_url: str | None) -> int:
+    """Extracts Berkeley's taxonomy term id from a Term's source_url.
+
+    The database's Term.term_id and Berkeley's taxonomy id (e.g. 8573) are
+    unrelated numbers - the scrape must always go by the latter.
+    """
+    match = _TAXONOMY_TERM_RE.search(source_url or "")
+    if match is None:
+        raise ValueError(
+            f"term source_url {source_url!r} is not a classes.berkeley.edu "
+            "/taxonomy/term/{id} URL"
+        )
+    return int(match.group(1))
 
 
 def _building_short_code(name: str) -> str:
@@ -175,13 +192,16 @@ def run_import(
     db: Session,
     session: SectionSession,
     term_id: int,
-    source_url: str,
     *,
     rate_limit_seconds: float,
     max_pages: int = 5000,
     parser_version: str | None = None,
 ) -> ImportRun:
     """Runs the ingestion pipeline for a term and persists its output.
+
+    The sections scraped are the ones at the term's own `source_url` - a
+    missing term or an unusable source_url raises before anything is
+    written, including the ImportRun (it's a caller error, not a failed run).
 
     Commits only happen once, at the very end - never mid-run - so a crash
     can't leave a half-written ImportRun row. On any failure, the session is
@@ -199,6 +219,12 @@ def run_import(
     "gone" would risk deleting real availability data over a transient
     failure.
     """
+    term = db.get(Term, term_id)
+    if term is None:
+        raise ValueError(f"term {term_id} does not exist")
+    source_url = term.source_url
+    taxonomy_term_id = _taxonomy_term_id(source_url)
+
     pipeline = IngestionPipeline(
         session, rate_limit_seconds=rate_limit_seconds, max_pages=max_pages
     )
@@ -217,7 +243,7 @@ def run_import(
     building_cache: _BuildingCache = {}
     room_cache: _RoomCache = {}
     try:
-        for section in pipeline.run(term_id):
+        for section in pipeline.run(taxonomy_term_id):
             if is_accepted(section):
                 persist_section(db, term_id, section, seen, building_cache, room_cache)
         if pipeline.stats.failed:

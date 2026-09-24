@@ -37,7 +37,7 @@ def test_pipeline_end_to_end_counts_and_yields():
     session = FakeSession(_handler)
     pipeline = IngestionPipeline(session, rate_limit_seconds=0)
 
-    sections = list(pipeline.run(term_id=8573))
+    sections = list(pipeline.run(taxonomy_term_id=8573))
 
     assert [s.slug for s in sections] == ["lec-with-room", "ind-no-meetings"]
     assert pipeline.stats.read == 3  # includes the 404 path
@@ -65,7 +65,7 @@ def test_pipeline_survives_a_malformed_section_page():
     session = FakeSession(handler)
     pipeline = IngestionPipeline(session, rate_limit_seconds=0)
 
-    sections = list(pipeline.run(term_id=8573))
+    sections = list(pipeline.run(taxonomy_term_id=8573))
 
     # the broken page is skipped, not fatal - the next section still comes through
     assert [s.slug for s in sections] == ["lec-with-room"]
@@ -88,7 +88,7 @@ def test_pipeline_propagates_a_taxonomy_page_fetch_failure(caplog: pytest.LogCap
 
     with caplog.at_level(logging.ERROR, logger="ingestion.pipeline"):
         with pytest.raises(FetchError):
-            list(pipeline.run(term_id=8573))
+            list(pipeline.run(taxonomy_term_id=8573))
 
     assert any("enumerate" in record.message for record in caplog.records)
     assert pipeline.stats.read == 0
@@ -107,7 +107,7 @@ def test_pipeline_propagates_max_pages_exceeded():
     pipeline = IngestionPipeline(session, rate_limit_seconds=0, max_pages=3)
 
     with pytest.raises(RuntimeError, match="max_pages"):
-        list(pipeline.run(term_id=8573))
+        list(pipeline.run(taxonomy_term_id=8573))
 
 
 def test_pipeline_logs_parse_failures_with_the_slug(caplog: pytest.LogCaptureFixture):
@@ -124,7 +124,7 @@ def test_pipeline_logs_parse_failures_with_the_slug(caplog: pytest.LogCaptureFix
     pipeline = IngestionPipeline(session, rate_limit_seconds=0)
 
     with caplog.at_level(logging.ERROR, logger="ingestion.pipeline"):
-        list(pipeline.run(term_id=8573))
+        list(pipeline.run(taxonomy_term_id=8573))
 
     assert any("broken" in record.message for record in caplog.records)
     assert caplog.records[0].exc_info is not None
