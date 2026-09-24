@@ -65,5 +65,9 @@ def test_recompute_availability_rebuilds_room_intervals():
         (time(11, 0), time(22, 0)),
     ]
     assert all(row.source_version == "test" for row in intervals)
-    assert all(row.computed_at == datetime(2026, 8, 1, tzinfo=timezone.utc) for row in intervals)
+    assert all(
+        row.computed_at.replace(tzinfo=timezone.utc)
+        == datetime(2026, 8, 1, tzinfo=timezone.utc)
+        for row in intervals
+    )
     assert len(intervals) == 8
