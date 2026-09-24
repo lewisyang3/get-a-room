@@ -112,6 +112,23 @@ Give whatever stops an import a longer grace period than the request timeout:
 for example `docker stop -t 60`, `stop_grace_period: 60s` in Compose, or your
 scheduler's equivalent.
 
+### Known limitations
+
+- **Concurrent runs aren't prevented.** Two `import run` commands for the same
+  term can run at the same time, and two `term create` commands run at once can
+  both pass the taxonomy-id check and create two terms for one id. The real
+  fix is a unique taxonomy-id column (a migration) plus the non-overlapping
+  scheduled runs planned in GAR-045; until then, run one command at a time.
+- **An interrupt during the final commit can leave two records.** If Ctrl-C or
+  SIGTERM lands after the database has committed the `COMPLETED` run but before
+  the commit call returns, a `FAILED` row is added beside it. The data itself
+  is the completed import's.
+- **Source URLs are validated strictly.** A term's URL must be exactly
+  `https://classes.berkeley.edu/taxonomy/term/{id}`; a stored term that doesn't
+  match (e.g. one created before this rule) fails `import run` with exit 2.
+  Before deploying to a database that already has terms, check their URLs with
+  `python -m ingestion.cli term list`.
+
 ## Running tests and lint locally
 
 ```bash

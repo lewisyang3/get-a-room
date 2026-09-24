@@ -199,6 +199,8 @@ def _term_create(args: argparse.Namespace, db: Session) -> int:
         raise CliError(f"{duplicate_error} (id {existing.term_id})")
     # Two terms scraping the same taxonomy id would import the same sections
     # twice under different term_ids, duplicating meetings and availability.
+    # Not atomic: concurrent creates can both pass this check. The real fix is
+    # a unique taxonomy-id column (see README "Known limitations").
     new_taxonomy_id = taxonomy_term_id(args.source_url)
     for other in db.scalars(select(Term)):
         try:
