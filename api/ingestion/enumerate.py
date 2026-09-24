@@ -3,21 +3,21 @@ from collections.abc import Iterator
 
 from ingestion.fetch import SectionSession, fetch
 
-# classes.berkeley.edu/taxonomy/term/{term_id} is permitted by robots.txt;
+# classes.berkeley.edu/taxonomy/term/{taxonomy_term_id} is permitted by robots.txt;
 # /search/ is not (and its results are rendered client-side anyway).
 _CONTENT_LINK_RE = re.compile(r'href="(/content/[^"]+)"')
 
 
 def enumerate_section_urls(
     session: SectionSession,
-    term_id: int,
+    taxonomy_term_id: int,
     *,
     rate_limit_seconds: float,
     max_pages: int = 5000,
 ) -> Iterator[str]:
     """Yields /content/{slug} paths for every section in a term.
 
-    Pages classes.berkeley.edu/taxonomy/term/{term_id}?page=N starting at 0
+    Pages classes.berkeley.edu/taxonomy/term/{taxonomy_term_id}?page=N starting at 0
     and stops as soon as a page yields no section links, rather than
     relying on a known page count. Termination is based on the raw
     (pre-dedup) link count for that page, not the net-new count - a page
@@ -41,12 +41,12 @@ def enumerate_section_urls(
         if page >= max_pages:
             raise RuntimeError(
                 f"enumerate_section_urls exceeded max_pages={max_pages} for "
-                f"term {term_id} without reaching an empty page - possible "
+                f"term {taxonomy_term_id} without reaching an empty page - possible "
                 "pager misbehavior"
             )
         response = fetch(
             session,
-            f"/taxonomy/term/{term_id}",
+            f"/taxonomy/term/{taxonomy_term_id}",
             params={"page": page},
             rate_limit_seconds=rate_limit_seconds,
         )

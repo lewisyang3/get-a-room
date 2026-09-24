@@ -21,7 +21,7 @@ def _make_session(pages: dict[int, str]) -> FakeSession:
 def test_enumerate_stops_at_first_empty_page():
     session = _make_session(_PAGES)
 
-    urls = list(enumerate_section_urls(session, term_id=8573, rate_limit_seconds=0))
+    urls = list(enumerate_section_urls(session, taxonomy_term_id=8573, rate_limit_seconds=0))
 
     assert urls == [
         "/content/course-a-lec-001",
@@ -36,7 +36,7 @@ def test_enumerate_dedupes_links_within_a_page():
     dupe_page = {0: '<a href="/content/x-lec-001">X</a> <a href="/content/x-lec-001">X again</a>', 1: ""}
     session = _make_session(dupe_page)
 
-    urls = list(enumerate_section_urls(session, term_id=8573, rate_limit_seconds=0))
+    urls = list(enumerate_section_urls(session, taxonomy_term_id=8573, rate_limit_seconds=0))
 
     assert urls == ["/content/x-lec-001"]
 
@@ -56,7 +56,7 @@ def test_enumerate_dedupes_links_across_pages_without_stopping_early():
     }
     session = _make_session(overlapping_pages)
 
-    urls = list(enumerate_section_urls(session, term_id=8573, rate_limit_seconds=0))
+    urls = list(enumerate_section_urls(session, taxonomy_term_id=8573, rate_limit_seconds=0))
 
     assert urls == ["/content/a", "/content/b", "/content/c"]
     assert [call[1]["page"] for call in session.calls] == [0, 1, 2, 3]
@@ -72,6 +72,6 @@ def test_enumerate_raises_instead_of_hanging_on_a_misbehaving_pager():
     session = FakeSession(handler)
 
     with pytest.raises(RuntimeError, match="max_pages"):
-        list(enumerate_section_urls(session, term_id=8573, rate_limit_seconds=0, max_pages=2))
+        list(enumerate_section_urls(session, taxonomy_term_id=8573, rate_limit_seconds=0, max_pages=2))
 
     assert len(session.calls) == 2

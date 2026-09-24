@@ -130,7 +130,17 @@ class Meeting(Base):
             "day_of_week BETWEEN 0 AND 6",
             name="ck_meeting_day_of_week",
         ),
-        UniqueConstraint("source_record_id", "day_of_week"),
+        # One section can meet in several blocks on the same day, so the
+        # identity is the full meeting, scoped to its term.
+        UniqueConstraint(
+            "term_id",
+            "source_record_id",
+            "room_id",
+            "day_of_week",
+            "start_time",
+            "end_time",
+            name="uq_meeting_identity",
+        ),
     )
 
 
@@ -187,6 +197,7 @@ class ImportRun(Base):
     records_read: Mapped[int] = mapped_column(Integer, default=0)
     records_imported: Mapped[int] = mapped_column(Integer, default=0)
     records_rejected: Mapped[int] = mapped_column(Integer, default=0)
+    records_failed: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[ImportStatus] = mapped_column(
         SqlEnum(ImportStatus), nullable=False
     )
