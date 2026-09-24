@@ -1,7 +1,8 @@
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, time
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -12,9 +13,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import get_settings
 from app.db import Base
 from app.models.models import Term, TermStatus
+from ingestion.persist import persist_section
+from ingestion.types import ParsedMeeting, ParsedSection
 
 
 TERM_SOURCE_URL = "https://classes.berkeley.edu/taxonomy/term/8573"
+FIXTURES = Path(__file__).parent.parent / "fixtures" / "sections"
 
 
 @dataclass
@@ -37,6 +41,61 @@ class FakeSession:
     def get(self, path: str, params: dict | None = None) -> FakeResponse:
         self.calls.append((path, params))
         return self.handler(path, params)
+
+
+def make_section(
+    source_record_id: str = "1",
+    building_name: str = "Dwinelle Hall",
+    room_number: str = "242",
+    meetings: list[ParsedMeeting] | None = None,
+    section_type: str = "LEC",
+) -> ParsedSection:
+    """An accepted ParsedSection, meeting Mondays 14:00-15:00 by default."""
+    section = ParsedSection(
+        source_record_id=source_record_id,
+        slug=f"section-{source_record_id}",
+        section_type=section_type,
+        building_name=building_name,
+        room_number=room_number,
+        location_raw=f"{building_name} {room_number}",
+        meetings=meetings
+        if meetings is not None
+        else [
+            ParsedMeeting(day_of_week=0, start_time=time(14, 0), end_time=time(15, 0))
+        ],
+    )
+    section.rejection_reason = None
+    return section
+
+
+def listing_handler(*slugs: str) -> Callable[[str, dict | None], FakeResponse]:
+    """Serves a one-page taxonomy listing of `slugs`, backed by fixtures.
+
+    A slug with no `tests/fixtures/sections/{slug}.html` file returns 404,
+    like a section that disappeared between enumeration and fetch.
+    """
+    page_0 = "".join(f'<a href="/content/{slug}">x</a>' for slug in slugs)
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        if path.startswith("/taxonomy/term/"):
+            page = (params or {}).get("page", 0)
+            return FakeResponse(200, text=page_0 if page == 0 else "")
+        slug = path.removeprefix("/content/")
+        fixture = FIXTURES / f"{slug.replace('-', '_')}.html"
+        if not fixture.exists():
+            return FakeResponse(404)
+        return FakeResponse(200, text=fixture.read_text())
+
+    return handler
+
+
+def persist_prior_sections(db: Session, term: Term, *source_record_ids: str) -> None:
+    """Commits one default meeting per id, as if from an earlier import."""
+    for source_record_id in source_record_ids:
+        persist_section(
+            db, term.term_id, make_section(source_record_id=source_record_id), set()
+        )
+    db.commit()
 
 
 def _test_database_url(app_url: str) -> URL:
