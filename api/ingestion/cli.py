@@ -7,14 +7,18 @@ Run as `python -m ingestion.cli --help`. Exit codes:
   2  usage, validation, or lookup error - nothing was run
   3  import completed, but some sections failed to fetch/parse, so
      stale-meeting cleanup was skipped
+  130/143  import interrupted by Ctrl-C/SIGTERM (128 + the signal number);
+     a FAILED ImportRun is recorded
 """
 
 import argparse
+import contextlib
 import logging
+import signal
 import sys
 import time
-from collections.abc import Callable, Sequence
-from datetime import date, datetime, timezone
+from collections.abc import Callable, Iterator, Sequence
+from datetime import date
 from zoneinfo import available_timezones
 
 from sqlalchemy import select
@@ -23,9 +27,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models.models import ImportRun, ImportStatus, Term, TermStatus
+from app.models.models import Term, TermStatus
 from ingestion.fetch import SectionSession, build_session
-from ingestion.persist import run_import, taxonomy_term_id
+from ingestion.persist import PARSER_VERSION_MAX_LENGTH, run_import, taxonomy_term_id
 
 logger = logging.getLogger("ingestion.cli")
 
@@ -42,6 +46,38 @@ _SOURCE_URL_MAX_LENGTH = Term.__table__.c.source_url.type.length
 
 class CliError(Exception):
     """A user-facing error: printed without a traceback, exits EXIT_USAGE."""
+
+
+class ImportInterrupted(KeyboardInterrupt):
+    """Raised by the SIGTERM handler, so run_import records the run FAILED."""
+
+    def __init__(self, signum: int):
+        super().__init__(f"interrupted by {signal.Signals(signum).name}")
+        self.signum = signum
+
+
+@contextlib.contextmanager
+def _interrupt_on_sigterm() -> Iterator[None]:
+    """Turns SIGTERM (docker stop, a scheduler timeout) into an exception.
+
+    Python's default SIGTERM handling kills the process without unwinding,
+    so no FAILED ImportRun would be recorded. The previous handler is
+    restored on exit. signal.signal only works in the main thread; elsewhere
+    this is a no-op.
+    """
+
+    def handler(signum: int, frame: object) -> None:
+        raise ImportInterrupted(signum)
+
+    try:
+        previous = signal.signal(signal.SIGTERM, handler)
+    except ValueError:
+        yield
+        return
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
 
 
 def _iso_date(value: str) -> date:
@@ -87,6 +123,15 @@ def _source_url(value: str) -> str:
             f"invalid source URL {value!r}: expected "
             "https://classes.berkeley.edu/taxonomy/term/{id}"
         ) from None
+    return value
+
+
+def _parser_version(value: str) -> str:
+    if len(value) > PARSER_VERSION_MAX_LENGTH:
+        raise argparse.ArgumentTypeError(
+            f"parser version is {len(value)} characters; the limit is "
+            f"{PARSER_VERSION_MAX_LENGTH}"
+        )
     return value
 
 
@@ -221,30 +266,6 @@ def _term_set_status(args: argparse.Namespace, db: Session) -> int:
     return EXIT_OK
 
 
-def _failed_run_label(db: Session, term_id: int, started_at: datetime) -> str:
-    """Names the FAILED ImportRun this invocation recorded, if it can.
-
-    Best-effort: if the failure was the database itself, run_import may not
-    have been able to record one, and looking it up can fail the same way.
-    """
-    try:
-        db.rollback()
-        failed_run = db.scalars(
-            select(ImportRun)
-            .where(
-                ImportRun.term_id == term_id,
-                ImportRun.status == ImportStatus.FAILED,
-                ImportRun.started_at >= started_at,
-            )
-            .order_by(ImportRun.import_id.desc())
-            .limit(1)
-        ).one_or_none()
-    except Exception:
-        logger.debug("couldn't look up the failed ImportRun", exc_info=True)
-        return "import (not recorded)"
-    return f"import {failed_run.import_id}" if failed_run else "import (not recorded)"
-
-
 def _import_run(
     args: argparse.Namespace,
     db: Session,
@@ -271,36 +292,44 @@ def _import_run(
     )
     logger.info("importing term %s (%s) from %s", term_id, term_name, term.source_url)
     started = time.monotonic()
-    started_at = datetime.now(timezone.utc)
-    session = session_factory()
-    try:
-        import_run = run_import(
-            db,
-            session,
-            term_id,
-            rate_limit_seconds=rate_limit_seconds,
-            max_pages=args.max_pages,
-            parser_version=args.parser_version,
-            max_retire_fraction=args.max_retire_fraction,
+
+    def report_failure(exc: BaseException, outcome: str) -> None:
+        run_id = getattr(exc, "import_run_id", None)
+        detail = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+        message = (
+            f"import {run_id if run_id is not None else '(not recorded)'} for "
+            f"term {term_id} ({term_name}) {outcome} after "
+            f"{time.monotonic() - started:.0f}s: {detail}"
         )
-    except Exception as exc:
-        # run_import has already logged the traceback, recorded a FAILED
-        # ImportRun, and rolled back this run's changes - just summarize.
-        run_label = _failed_run_label(db, term_id, started_at)
-        logger.error(
-            "%s for term %s (%s) FAILED after %.0fs: %s: %s",
-            run_label,
-            term_id,
-            term_name,
-            time.monotonic() - started,
-            type(exc).__name__,
-            exc,
-        )
-        return EXIT_FAILED
-    finally:
-        close = getattr(session, "close", None)
-        if close is not None:
-            close()
+        if run_id is not None:
+            # run_import already logged the traceback and recorded the run.
+            logger.error("%s", message)
+        else:
+            # Nothing was recorded, so this is the only trace of the failure.
+            logger.error("%s", message, exc_info=exc)
+
+    with _interrupt_on_sigterm():
+        session = session_factory()
+        try:
+            import_run = run_import(
+                db,
+                session,
+                term_id,
+                rate_limit_seconds=rate_limit_seconds,
+                max_pages=args.max_pages,
+                parser_version=args.parser_version,
+                max_retire_fraction=args.max_retire_fraction,
+            )
+        except KeyboardInterrupt as exc:
+            report_failure(exc, "INTERRUPTED")
+            return 128 + getattr(exc, "signum", signal.SIGINT)
+        except Exception as exc:
+            report_failure(exc, "FAILED")
+            return EXIT_FAILED
+        finally:
+            close = getattr(session, "close", None)
+            if close is not None:
+                close()
 
     summary = (
         f"import {import_run.import_id} for term {term_id} ({term_name}) "
@@ -385,7 +414,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=_non_negative_float,
         help="delay between requests (default: SCRAPER_RATE_LIMIT_SECONDS)",
     )
-    run.add_argument("--parser-version", help="recorded on the ImportRun for debugging")
+    run.add_argument(
+        "--parser-version",
+        type=_parser_version,
+        help="recorded on the ImportRun for debugging",
+    )
     run.add_argument(
         "--allow-archived",
         action="store_true",

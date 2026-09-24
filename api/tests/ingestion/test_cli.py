@@ -1,4 +1,6 @@
 import logging
+import os
+import signal
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -386,6 +388,9 @@ def test_import_run_never_reports_an_older_failed_run_as_this_one(
 
     assert "import (not recorded) for term" in caplog.text
     assert f"import {older.import_id} for term" not in caplog.text
+    # Nothing else logged this failure, so the CLI must include the traceback.
+    assert "Traceback" in caplog.text
+    assert "database went away" in caplog.text
 
 
 def test_import_run_rejects_an_unknown_term(cli, db: Session, capsys):
@@ -441,6 +446,7 @@ def test_import_run_rejects_a_term_without_a_source_url(cli, db: Session, capsys
         ("--max-retire-fraction", "abc"),
         ("--rate-limit-seconds", "-1"),
         ("--rate-limit-seconds", "abc"),
+        ("--parser-version", "x" * 51),
     ],
 )
 def test_import_run_rejects_out_of_range_options(
@@ -498,3 +504,49 @@ def test_import_run_defaults_the_rate_limit_from_settings(
 
     assert code == 0
     assert [call["rate_limit_seconds"] for call in calls] == [0.0]
+
+
+def _interrupting_session(interrupt) -> ClosingFakeSession:
+    listing = listing_handler("lec-with-room")
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        if path.startswith("/content/"):
+            interrupt()
+        return listing(path, params)
+
+    return ClosingFakeSession(handler)
+
+
+def test_import_run_records_a_ctrl_c_and_exits_130(
+    cli, db: Session, created_term, caplog
+):
+    def ctrl_c():
+        raise KeyboardInterrupt
+
+    session = _interrupting_session(ctrl_c)
+
+    assert cli(*_import_args(), session=session) == 130
+
+    failed = _import_runs(db)[-1]
+    assert failed.status == ImportStatus.FAILED
+    assert failed.error_message == "KeyboardInterrupt"
+    assert f"import {failed.import_id} for term" in caplog.text
+    assert "INTERRUPTED" in caplog.text
+    assert db.query(Meeting).count() == 0
+    assert session.closed
+
+
+def test_import_run_records_a_sigterm_and_exits_143(
+    cli, db: Session, created_term, caplog
+):
+    previous_handler = signal.getsignal(signal.SIGTERM)
+    session = _interrupting_session(lambda: os.kill(os.getpid(), signal.SIGTERM))
+
+    assert cli(*_import_args(), session=session) == 143
+
+    failed = _import_runs(db)[-1]
+    assert failed.status == ImportStatus.FAILED
+    assert failed.error_message == "interrupted by SIGTERM"
+    assert "INTERRUPTED" in caplog.text
+    assert session.closed
+    assert signal.getsignal(signal.SIGTERM) is previous_handler
