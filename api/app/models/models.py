@@ -130,7 +130,13 @@ class Meeting(Base):
             "day_of_week BETWEEN 0 AND 6",
             name="ck_meeting_day_of_week",
         ),
-        UniqueConstraint("source_record_id", "day_of_week"),
+        UniqueConstraint(
+            "term_id",
+            "source_record_id",
+            "day_of_week",
+            "start_time",
+            name="uq_meeting_term_source_day_start",
+        ),
     )
 
 
