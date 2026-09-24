@@ -227,6 +227,9 @@ def _retire_stale_meetings(db: Session, term_id: int, seen: set[str]) -> int:
     ]
     for meeting in stale:
         db.delete(meeting)
+    # autoflush is off - flush so the availability recompute that follows
+    # in the same run doesn't still see the deleted meetings.
+    db.flush()
     return len(stale)
 
 

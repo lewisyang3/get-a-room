@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.models import (
+    AvailabilityInterval,
     Building,
     ImportRun,
     ImportStatus,
@@ -752,3 +753,46 @@ def test_taxonomy_term_id_rejects_hidden_characters(source_url: str):
     """urlsplit strips or removes some of these, so they'd otherwise parse."""
     with pytest.raises(ValueError, match="whitespace or control characters"):
         taxonomy_term_id(source_url)
+
+
+def test_reimport_frees_the_room_of_a_section_that_disappeared(db: Session, term: Term):
+    """The stale pass deletes the vanished section's meetings, and the
+    availability recomputed in the same run must not still see them."""
+    run_import(
+        db,
+        FakeSession(listing_handler("lec-with-room", "dis-with-room")),
+        term.term_id,
+        rate_limit_seconds=0,
+    )
+    # lec_with_room.html: section 482493, Dwinelle 242, Fridays 14:00-17:00.
+    room = (
+        db.query(Room)
+        .join(Building)
+        .filter(Building.name == "Dwinelle", Room.room_number == "242")
+        .one()
+    )
+
+    def friday_free_intervals() -> list[tuple[time, time]]:
+        return [
+            (interval.start_time, interval.end_time)
+            for interval in db.query(AvailabilityInterval)
+            .filter_by(term_id=term.term_id, room_id=room.room_id, day_of_week=4)
+            .order_by(AvailabilityInterval.start_time)
+        ]
+
+    assert friday_free_intervals() == [
+        (time(7, 0), time(14, 0)),
+        (time(17, 0), time(22, 0)),
+    ]
+
+    # 482493 is gone from the listing; retiring 1 of 2 sections is allowed.
+    result = run_import(
+        db,
+        FakeSession(listing_handler("dis-with-room")),
+        term.term_id,
+        rate_limit_seconds=0,
+    )
+
+    assert result.status == ImportStatus.COMPLETED
+    assert db.query(Meeting).filter_by(source_record_id="482493").count() == 0
+    assert friday_free_intervals() == [(time(7, 0), time(22, 0))]
