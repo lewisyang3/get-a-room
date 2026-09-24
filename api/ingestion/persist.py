@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import logging
 import re
@@ -24,6 +25,8 @@ _MeetingKey = tuple[int, int, time, time]  # (room_id, day_of_week, start, end)
 class ImportAborted(Exception):
     """A run's output looks too wrong to apply - the prior data is kept."""
 
+
+PARSER_VERSION_MAX_LENGTH = ImportRun.__table__.c.parser_version.type.length
 
 _TAXONOMY_TERM_RE = re.compile(r"/taxonomy/term/(\d+)/?(?:[?#]|$)")
 
@@ -211,12 +214,17 @@ def run_import(
     written, including the ImportRun (it's a caller error, not a failed run).
 
     Commits only happen once, at the very end - never mid-run - so a crash
-    can't leave a half-written ImportRun row. On any failure, the session is
-    rolled back (discarding this run's in-progress work entirely, including
-    the not-yet-committed RUNNING ImportRun insert - a failed run persists
-    nothing but a record of its own failure) and a fresh ImportRun row is
-    inserted with status=FAILED, then the exception is re-raised: propagated,
-    not swallowed, matching the pipeline's own enumeration-failure handling.
+    can't leave a half-written ImportRun row. On any failure after the
+    argument checks - including a KeyboardInterrupt, which the CLI also
+    raises for SIGTERM - the traceback is logged, the session is rolled back
+    (discarding this run's in-progress work entirely, including the
+    not-yet-committed RUNNING ImportRun insert - a failed run persists
+    nothing but a record of its own failure), and a fresh ImportRun row is
+    inserted with status=FAILED. The original exception is then re-raised,
+    with the FAILED row's id attached as `exc.import_run_id`. If recording
+    the FAILED row itself fails (e.g. the database is unreachable), that is
+    logged and the original exception is still the one re-raised, without
+    `import_run_id`.
 
     Stale-meeting retirement only runs when the pipeline reports zero
     per-section failures this run - the pipeline swallows individual
@@ -234,6 +242,10 @@ def run_import(
     """
     if not 0 <= max_retire_fraction <= 1:
         raise ValueError("max_retire_fraction must be between 0 and 1")
+    if parser_version is not None and len(parser_version) > PARSER_VERSION_MAX_LENGTH:
+        raise ValueError(
+            f"parser_version must be at most {PARSER_VERSION_MAX_LENGTH} characters"
+        )
     term = db.get(Term, term_id)
     if term is None:
         raise ValueError(f"term {term_id} does not exist")
@@ -244,26 +256,27 @@ def run_import(
         session, rate_limit_seconds=rate_limit_seconds, max_pages=max_pages
     )
     started_at = datetime.now(timezone.utc)
-    import_run = ImportRun(
-        term_id=term_id,
-        started_at=started_at,
-        source_url=source_url,
-        parser_version=parser_version,
-        status=ImportStatus.RUNNING,
-    )
-    db.add(import_run)
-    db.flush()
-
-    prior_sections = {
-        source_record_id
-        for (source_record_id,) in db.query(Meeting.source_record_id)
-        .filter_by(term_id=term_id)
-        .distinct()
-    }
     seen: set[str] = set()
     building_cache: _BuildingCache = {}
     room_cache: _RoomCache = {}
     try:
+        # Inside the try: a failure here must still record a FAILED run.
+        import_run = ImportRun(
+            term_id=term_id,
+            started_at=started_at,
+            source_url=source_url,
+            parser_version=parser_version,
+            status=ImportStatus.RUNNING,
+        )
+        db.add(import_run)
+        db.flush()
+
+        prior_sections = {
+            source_record_id
+            for (source_record_id,) in db.query(Meeting.source_record_id)
+            .filter_by(term_id=term_id)
+            .distinct()
+        }
         for section in pipeline.run(taxonomy_id):
             if is_accepted(section):
                 persist_section(db, term_id, section, seen, building_cache, room_cache)
@@ -309,28 +322,42 @@ def run_import(
         import_run.records_rejected = pipeline.stats.rejected
         import_run.records_failed = pipeline.stats.failed
         db.commit()
-    except Exception as exc:
+    except (Exception, KeyboardInterrupt) as exc:
         logger.exception("import run for term %s failed", term_id)
-        db.rollback()
-        failed_run = ImportRun(
-            term_id=term_id,
-            started_at=started_at,
-            completed_at=datetime.now(timezone.utc),
-            source_url=source_url,
-            parser_version=parser_version,
-            records_read=pipeline.stats.read,
-            # Not pipeline.stats.accepted: db.rollback() above discarded
-            # every upsert this run made, so the true persisted count is
-            # always 0 here, regardless of how many sections were
-            # classified as accepted before the failure.
-            records_imported=0,
-            records_rejected=pipeline.stats.rejected,
-            records_failed=pipeline.stats.failed,
-            status=ImportStatus.FAILED,
-            error_message=str(exc)[:2000],
-        )
-        db.add(failed_run)
-        db.commit()
+        try:
+            db.rollback()
+            failed_run = ImportRun(
+                term_id=term_id,
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+                source_url=source_url,
+                parser_version=parser_version,
+                records_read=pipeline.stats.read,
+                # Not pipeline.stats.accepted: db.rollback() above discarded
+                # every upsert this run made, so the true persisted count is
+                # always 0 here, regardless of how many sections were
+                # classified as accepted before the failure.
+                records_imported=0,
+                records_rejected=pipeline.stats.rejected,
+                records_failed=pipeline.stats.failed,
+                status=ImportStatus.FAILED,
+                # KeyboardInterrupt() has an empty message.
+                error_message=(str(exc) or type(exc).__name__)[:2000],
+            )
+            db.add(failed_run)
+            db.flush()
+            # Read before commit, which expires it and would need a reload.
+            failed_run_id = failed_run.import_id
+            db.commit()
+        except Exception:
+            # Keep the original failure as the one that propagates.
+            logger.exception(
+                "could not record the FAILED ImportRun for term %s", term_id
+            )
+            with contextlib.suppress(Exception):
+                db.rollback()
+        else:
+            exc.import_run_id = failed_run_id
         raise
 
     return import_run

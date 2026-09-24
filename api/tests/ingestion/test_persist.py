@@ -607,3 +607,93 @@ def test_persist_section_caches_building_and_room_lookups_within_a_run(
     room_queries = [q for q in queries if "from room" in q]
     assert len(building_queries) == 1
     assert len(room_queries) == 1
+
+
+def test_run_import_rejects_an_overlong_parser_version(db: Session, term: Term):
+    session = FakeSession(listing_handler("lec-with-room"))
+
+    with pytest.raises(ValueError, match="parser_version"):
+        run_import(
+            db, session, term.term_id, rate_limit_seconds=0, parser_version="x" * 51
+        )
+
+    assert session.calls == []
+    assert db.query(ImportRun).count() == 0
+
+
+def _fail_flush_when(db: Session, predicate) -> None:
+    """Makes the next flush whose pending inserts match `predicate` raise."""
+
+    def before_flush(session, flush_context, instances):
+        if any(predicate(obj) for obj in session.new):
+            event.remove(db, "before_flush", before_flush)
+            raise RuntimeError("simulated database failure")
+
+    event.listen(db, "before_flush", before_flush)
+
+
+def test_run_import_records_a_failure_while_starting_the_run(db: Session, term: Term):
+    """A failure writing the RUNNING row - before any scraping - must still
+    be recorded, not escape with no ImportRun at all."""
+    _fail_flush_when(
+        db,
+        lambda obj: isinstance(obj, ImportRun) and obj.status == ImportStatus.RUNNING,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated") as exc_info:
+        run_import(
+            db,
+            FakeSession(listing_handler("lec-with-room")),
+            term.term_id,
+            rate_limit_seconds=0,
+        )
+
+    [failed] = db.query(ImportRun).all()
+    assert failed.status == ImportStatus.FAILED
+    assert exc_info.value.import_run_id == failed.import_id
+
+
+def test_run_import_records_an_interrupt_and_reraises_it(db: Session, term: Term):
+    def interrupting(path: str, params: dict | None) -> FakeResponse:
+        if path.startswith("/content/"):
+            raise KeyboardInterrupt
+        return listing_handler("lec-with-room")(path, params)
+
+    with pytest.raises(KeyboardInterrupt) as exc_info:
+        run_import(db, FakeSession(interrupting), term.term_id, rate_limit_seconds=0)
+
+    [failed] = db.query(ImportRun).all()
+    assert failed.status == ImportStatus.FAILED
+    assert failed.error_message == "KeyboardInterrupt"
+    assert exc_info.value.import_run_id == failed.import_id
+    assert db.query(Meeting).count() == 0
+
+
+def test_run_import_attaches_the_failed_run_id_to_the_exception(
+    db: Session, term: Term
+):
+    with pytest.raises(ImportAborted) as exc_info:
+        run_import(
+            db, FakeSession(listing_handler()), term.term_id, rate_limit_seconds=0
+        )
+
+    [failed] = db.query(ImportRun).all()
+    assert exc_info.value.import_run_id == failed.import_id
+
+
+def test_run_import_reraises_the_original_error_if_recording_it_fails(
+    db: Session, term: Term, caplog: pytest.LogCaptureFixture
+):
+    _fail_flush_when(
+        db,
+        lambda obj: isinstance(obj, ImportRun) and obj.status == ImportStatus.FAILED,
+    )
+
+    with pytest.raises(ImportAborted) as exc_info:
+        run_import(
+            db, FakeSession(listing_handler()), term.term_id, rate_limit_seconds=0
+        )
+
+    assert not hasattr(exc_info.value, "import_run_id")
+    assert "could not record the FAILED ImportRun" in caplog.text
+    assert db.query(ImportRun).count() == 0
