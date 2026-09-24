@@ -1,0 +1,8 @@
+# Tool configuration only - dependencies live in requirements*.txt.
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
