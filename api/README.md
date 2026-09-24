@@ -8,8 +8,8 @@ space that's free to study in right now, how long it stays free, and where it is
 - `app/` — FastAPI application (`main.py`), config (`config.py`), DB setup (`db.py`),
   API routers (`app/api/`), and SQLAlchemy models (`app/models/`).
 - `alembic/` — database migrations.
-- `ingestion/` — Berkeley schedule scraper, parser, and import into the database
-  (`persist.py`'s `run_import`).
+- `ingestion/` — Berkeley schedule scraper, parser, import into the database
+  (`persist.py`'s `run_import`), and the operator CLI (`cli.py`).
 - `tests/` — pytest suite.
 
 Availability is derived from **scheduled** course data — this does not guarantee a
@@ -51,6 +51,52 @@ in a module that's never imported won't show up in autogenerate.
 
 Keep migrations linear (one head) and make every `downgrade()` fully undo its
 `upgrade()` — CI checks both (see below).
+
+## Importing a term
+
+Imports are run by hand with the operator CLI (`python -m ingestion.cli --help`).
+With the database migrated, create the term once, pointing it at the term's
+page on classes.berkeley.edu (`/taxonomy/term/{id}`), then import it:
+
+```bash
+python -m ingestion.cli term create --name "Fall 2026" \
+    --start 2026-08-19 --end 2026-12-18 \
+    --source-url https://classes.berkeley.edu/taxonomy/term/8573
+python -m ingestion.cli term list
+python -m ingestion.cli import run "Fall 2026"
+```
+
+Terms can be referred to by id or exact name. `term create` also takes
+`--timezone` (default `America/Los_Angeles`) and `--status active|archived`;
+`term set-status "Fall 2026" archived` retires a term, after which
+`import run` refuses it unless given `--allow-archived`.
+
+Inside Docker Compose, prefix commands with `docker compose run --rm api`,
+e.g. `docker compose run --rm api python -m ingestion.cli term list`.
+
+`import run` scrapes every section in the term, one request per
+`SCRAPER_RATE_LIMIT_SECONDS` (a full term is thousands of requests - expect it
+to take a while), logs progress every 100 sections, and records the run as an
+`ImportRun`. Re-running is safe: meetings are upserted, and ones the term no
+longer lists are removed. Options:
+
+- `--max-retire-fraction F` (default `0.5`) — abort, keeping the existing
+  data, if the run would remove more than this fraction of the term's
+  sections. A run that finds no sections at all always aborts. Pass `1.0` when
+  a genuinely large change is expected.
+- `--max-pages N` (default `5000`) — fail instead of paging the term listing
+  forever.
+- `--rate-limit-seconds S` — override `SCRAPER_RATE_LIMIT_SECONDS`.
+- `--parser-version V` — recorded on the `ImportRun` for debugging.
+
+Exit codes, for scripts and schedulers:
+
+| Code | Meaning |
+|---|---|
+| 0 | Import completed. |
+| 1 | Import failed or aborted. A `FAILED` `ImportRun` is recorded, and the previously imported data is left untouched. |
+| 2 | Usage error: bad arguments, unknown or archived term, or a term without a usable source URL. Nothing ran. |
+| 3 | Import completed, but some sections failed to fetch or parse, so removal of classes that disappeared was skipped. Re-run once the source recovers. |
 
 ## Running tests and lint locally
 
