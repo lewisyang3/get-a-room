@@ -5,6 +5,7 @@ from datetime import datetime, time, timezone
 
 from sqlalchemy.orm import Session
 
+from app.models.availability.recompute import recompute_availability
 from app.models.models import Building, ImportRun, ImportStatus, Meeting, Room, Term
 from ingestion.fetch import SectionSession
 from ingestion.filter import is_accepted
@@ -294,6 +295,13 @@ def run_import(
         # unflushed duplicate Meeting insert) - it must stay inside this
         # try block, or a failure here would propagate uncaught and leave
         # no FAILED ImportRun record at all.
+        recompute_availability(
+            db,
+            term_id,
+            source_version="availability-v1",
+            computed_at=datetime.now(timezone.utc),
+        )
+        import_run.computation_version = "availability-v1"
         import_run.status = ImportStatus.COMPLETED
         import_run.completed_at = datetime.now(timezone.utc)
         import_run.records_read = pipeline.stats.read
