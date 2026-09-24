@@ -5,7 +5,7 @@ import pytest
 
 from ingestion.fetch import FetchError
 from ingestion.pipeline import IngestionPipeline
-from tests.ingestion.conftest import FakeResponse, FakeSession
+from tests.ingestion.conftest import FakeResponse, FakeSession, listing_handler
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "sections"
 
@@ -132,3 +132,26 @@ def test_pipeline_logs_parse_failures_with_the_slug(caplog: pytest.LogCaptureFix
 
     assert any("broken" in record.message for record in caplog.records)
     assert caplog.records[0].exc_info is not None
+
+
+def test_pipeline_logs_progress_every_n_sections(caplog: pytest.LogCaptureFixture):
+    caplog.set_level(logging.INFO, logger="ingestion.pipeline")
+    session = FakeSession(
+        listing_handler(
+            "lec-with-room",  # accepted
+            "ind-no-meetings",  # rejected: IND
+            "vanished",  # failed: 404
+            "lec-general-assignment",  # rejected: no assigned room
+            "grp-with-room",  # 5th - after the last full batch of 2
+        )
+    )
+    pipeline = IngestionPipeline(session, rate_limit_seconds=0, progress_every=2)
+
+    list(pipeline.run(taxonomy_term_id=8573))
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert "enumerating sections for taxonomy term 8573" in messages
+    assert [m for m in messages if m.startswith("progress:")] == [
+        "progress: 2 sections read (1 accepted, 1 rejected, 0 failed)",
+        "progress: 4 sections read (1 accepted, 2 rejected, 1 failed)",
+    ]

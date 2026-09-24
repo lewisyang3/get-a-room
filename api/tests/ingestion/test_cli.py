@@ -1,10 +1,20 @@
-from datetime import date
+import logging
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models.models import Term, TermStatus
+import ingestion.cli
+from app.models.models import ImportRun, ImportStatus, Meeting, Term, TermStatus
 from ingestion.cli import main
+from tests.ingestion.conftest import (
+    FakeResponse,
+    FakeSession,
+    listing_handler,
+    persist_prior_sections,
+)
 
 SOURCE_URL = "https://classes.berkeley.edu/taxonomy/term/8573"
 
@@ -14,11 +24,19 @@ def cli(db: Session, db_engine):
     """Runs the CLI against the test database; `db` truncates afterwards."""
     db_factory = sessionmaker(bind=db_engine, autoflush=False)
 
-    def run(*argv: str) -> int:
-        code = main(list(argv), db_factory=db_factory)
+    def run(*argv: str, session: FakeSession | None = None) -> int:
+        def session_factory() -> FakeSession:
+            run.scraper_builds += 1
+            if session is None:
+                raise AssertionError("the command built a scraper session")
+            return session
+
+        code = main(list(argv), db_factory=db_factory, session_factory=session_factory)
         db.expire_all()
         return code
 
+    # How many scraper sessions the command built, across calls.
+    run.scraper_builds = 0
     return run
 
 
@@ -178,3 +196,234 @@ def test_help_exits_zero(cli, capsys):
     assert cli("--help") == 0
     assert cli("term", "create", "--help") == 0
     assert "--source-url" in capsys.readouterr().out
+
+
+# --- import run -------------------------------------------------------------
+
+
+@dataclass
+class ClosingFakeSession(FakeSession):
+    closed: bool = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _session(*slugs: str) -> ClosingFakeSession:
+    return ClosingFakeSession(listing_handler(*slugs))
+
+
+def _import_args(term: str = "Fall 2026", *extra: str) -> list[str]:
+    # A zero rate limit so no test sleeps between fake requests.
+    return ["import", "run", term, "--rate-limit-seconds", "0", *extra]
+
+
+@pytest.fixture
+def created_term(cli, db: Session, capsys) -> Term:
+    assert cli(*_create_args()) == 0
+    capsys.readouterr()
+    return db.query(Term).one()
+
+
+def _import_runs(db: Session) -> list[ImportRun]:
+    return db.query(ImportRun).order_by(ImportRun.import_id).all()
+
+
+def test_import_run_completes_and_exits_0(cli, db: Session, created_term, caplog):
+    caplog.set_level(logging.INFO)
+    session = _session("lec-with-room", "ind-no-meetings")
+
+    assert cli(*_import_args(), session=session) == 0
+
+    [run] = _import_runs(db)
+    assert run.status == ImportStatus.COMPLETED
+    assert (
+        run.records_read,
+        run.records_imported,
+        run.records_rejected,
+        run.records_failed,
+    ) == (2, 1, 1, 0)
+    assert db.query(Meeting).filter_by(term_id=created_term.term_id).count() == 1
+    taxonomy_paths = {p for p, _ in session.calls if p.startswith("/taxonomy/")}
+    assert taxonomy_paths == {"/taxonomy/term/8573"}
+    assert f"import {run.import_id} for term {created_term.term_id}" in caplog.text
+    assert "COMPLETED" in caplog.text
+    assert "2 read, 1 imported, 1 rejected, 0 failed" in caplog.text
+    assert session.closed
+
+
+def test_import_run_exits_3_when_a_section_fails(
+    cli, db: Session, created_term, caplog
+):
+    caplog.set_level(logging.INFO)
+
+    code = cli(*_import_args(), session=_session("lec-with-room", "vanished"))
+
+    assert code == 3
+    [run] = _import_runs(db)
+    assert run.status == ImportStatus.COMPLETED
+    assert run.records_failed == 1
+    assert any(
+        r.levelno == logging.WARNING and "cleanup was skipped" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_import_run_exits_1_when_the_import_aborts(
+    cli, db: Session, created_term, caplog
+):
+    persist_prior_sections(db, created_term, "a", "b")
+    session = _session()  # an empty listing
+
+    assert cli(*_import_args(), session=session) == 1
+
+    failed = _import_runs(db)[-1]
+    assert failed.status == ImportStatus.FAILED
+    assert f"import {failed.import_id} for term" in caplog.text
+    assert "ImportAborted" in caplog.text
+    assert {m.source_record_id for m in db.query(Meeting)} == {"a", "b"}
+    assert session.closed
+
+
+def test_import_run_exits_1_when_enumeration_fails(cli, db: Session, created_term):
+    session = ClosingFakeSession(lambda path, params: FakeResponse(403, "Forbidden"))
+
+    assert cli(*_import_args(), session=session) == 1
+
+    assert _import_runs(db)[-1].status == ImportStatus.FAILED
+    assert session.closed
+
+
+def test_import_run_never_reports_an_older_failed_run_as_this_one(
+    cli, db: Session, created_term, caplog, monkeypatch
+):
+    older = ImportRun(
+        term_id=created_term.term_id,
+        started_at=datetime.now(timezone.utc) - timedelta(days=1),
+        source_url=created_term.source_url,
+        status=ImportStatus.FAILED,
+    )
+    db.add(older)
+    db.commit()
+
+    def fails_without_recording(*args, **kwargs):
+        raise RuntimeError("database went away")
+
+    monkeypatch.setattr(ingestion.cli, "run_import", fails_without_recording)
+
+    assert cli(*_import_args(), session=_session()) == 1
+
+    assert "import (not recorded) for term" in caplog.text
+    assert f"import {older.import_id} for term" not in caplog.text
+
+
+def test_import_run_rejects_an_unknown_term(cli, db: Session, capsys):
+    assert cli(*_import_args("Nope 1999")) == 2
+
+    assert "no term matching 'Nope 1999'" in capsys.readouterr().err
+    assert _import_runs(db) == []
+    assert cli.scraper_builds == 0
+
+
+def test_import_run_refuses_an_archived_term_unless_allowed(
+    cli, db: Session, created_term, capsys
+):
+    assert cli("term", "set-status", "Fall 2026", "archived") == 0
+    capsys.readouterr()
+
+    assert cli(*_import_args()) == 2
+    assert "--allow-archived" in capsys.readouterr().err
+    assert _import_runs(db) == []
+    assert cli.scraper_builds == 0
+
+    session = _session("lec-with-room")
+    assert cli(*_import_args("Fall 2026", "--allow-archived"), session=session) == 0
+    assert _import_runs(db)[-1].status == ImportStatus.COMPLETED
+
+
+def test_import_run_rejects_a_term_without_a_source_url(cli, db: Session, capsys):
+    # Not creatable through the CLI, which validates --source-url.
+    db.add(
+        Term(
+            name="Legacy",
+            start_date=date(2025, 1, 21),
+            end_date=date(2025, 5, 16),
+            source_url=None,
+        )
+    )
+    db.commit()
+
+    assert cli(*_import_args("Legacy")) == 2
+
+    assert "can't be imported" in capsys.readouterr().err
+    assert _import_runs(db) == []
+    assert cli.scraper_builds == 0
+
+
+@pytest.mark.parametrize(
+    "option, value",
+    [
+        ("--max-pages", "0"),
+        ("--max-pages", "abc"),
+        ("--max-retire-fraction", "1.5"),
+        ("--max-retire-fraction", "-0.1"),
+        ("--max-retire-fraction", "abc"),
+        ("--rate-limit-seconds", "-1"),
+        ("--rate-limit-seconds", "abc"),
+    ],
+)
+def test_import_run_rejects_out_of_range_options(
+    cli, db: Session, created_term, capsys, option, value
+):
+    assert cli("import", "run", "Fall 2026", option, value) == 2
+
+    assert f"argument {option}" in capsys.readouterr().err
+    assert _import_runs(db) == []
+    assert cli.scraper_builds == 0
+
+
+def test_import_run_passes_max_retire_fraction_through(cli, db: Session, created_term):
+    """Retiring both prior sections exceeds the 0.5 default - it only
+    completes if --max-retire-fraction actually reaches run_import."""
+    persist_prior_sections(db, created_term, "a", "b")
+
+    code = cli(
+        *_import_args("Fall 2026", "--max-retire-fraction", "1.0"),
+        session=_session("ind-no-meetings"),
+    )
+
+    assert code == 0
+    assert db.query(Meeting).count() == 0
+
+
+def test_import_run_records_the_parser_version(cli, db: Session, created_term):
+    code = cli(
+        *_import_args("Fall 2026", "--parser-version", "v9"),
+        session=_session("lec-with-room"),
+    )
+
+    assert code == 0
+    assert _import_runs(db)[-1].parser_version == "v9"
+
+
+def test_import_run_defaults_the_rate_limit_from_settings(
+    cli, created_term, monkeypatch
+):
+    monkeypatch.setattr(
+        ingestion.cli,
+        "get_settings",
+        lambda: SimpleNamespace(scraper_rate_limit_seconds=0.0),
+    )
+    calls = []
+    real_run_import = ingestion.cli.run_import
+
+    def spy(*args, **kwargs):
+        calls.append(kwargs)
+        return real_run_import(*args, **kwargs)
+
+    monkeypatch.setattr(ingestion.cli, "run_import", spy)
+
+    code = cli("import", "run", "Fall 2026", session=_session("lec-with-room"))
+
+    assert code == 0
+    assert [call["rate_limit_seconds"] for call in calls] == [0.0]
