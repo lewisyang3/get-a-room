@@ -16,7 +16,12 @@ from app.models.models import (
 )
 from app.models.availability.inversion import invert_intervals
 from ingestion.fetch import FetchError
-from ingestion.persist import _retire_stale_meetings, persist_section, run_import
+from ingestion.persist import (
+    ImportAborted,
+    _retire_stale_meetings,
+    persist_section,
+    run_import,
+)
 from ingestion.types import ParsedMeeting, ParsedSection
 from tests.ingestion.conftest import FakeResponse, FakeSession
 
@@ -351,6 +356,113 @@ def test_run_import_records_zero_imported_on_a_failure_after_partial_success(
     # ...but the rollback means nothing was actually persisted.
     assert import_run.records_imported == 0
     assert db.query(Meeting).count() == 0
+
+
+def _listing_handler(*slugs: str):
+    """Serves a one-page taxonomy listing of `slugs`, backed by fixtures."""
+    page_0 = "".join(f'<a href="/content/{slug}">x</a>' for slug in slugs)
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        if path.startswith("/taxonomy/term/"):
+            page = (params or {}).get("page", 0)
+            return FakeResponse(200, text=page_0 if page == 0 else "")
+        slug = path.removeprefix("/content/")
+        return FakeResponse(
+            200, text=(FIXTURES / f"{slug.replace('-', '_')}.html").read_text()
+        )
+
+    return handler
+
+
+def _persist_prior_sections(db: Session, term: Term, *source_record_ids: str) -> None:
+    for source_record_id in source_record_ids:
+        persist_section(
+            db, term.term_id, _section(source_record_id=source_record_id), set()
+        )
+    db.commit()
+
+
+def test_run_import_aborts_when_enumeration_returns_no_sections(
+    db: Session, term: Term
+):
+    """An empty listing (site change, soft block) must not wipe the term."""
+    _persist_prior_sections(db, term, "a", "b")
+
+    with pytest.raises(ImportAborted, match="no sections"):
+        run_import(
+            db,
+            FakeSession(_listing_handler()),
+            term.term_id,
+            rate_limit_seconds=0,
+            max_retire_fraction=1.0,
+        )
+
+    import_run = db.query(ImportRun).filter_by(term_id=term.term_id).one()
+    assert import_run.status == ImportStatus.FAILED
+    assert {m.source_record_id for m in db.query(Meeting)} == {"a", "b"}
+
+
+def test_run_import_aborts_when_every_section_is_rejected(db: Session, term: Term):
+    """E.g. a parser regression rejecting everything: sections are read,
+    none are seen, and retiring the whole term would trip the guard."""
+    _persist_prior_sections(db, term, "a", "b")
+
+    with pytest.raises(ImportAborted, match="retire 2 of the term's 2"):
+        run_import(
+            db,
+            FakeSession(_listing_handler("ind-no-meetings")),
+            term.term_id,
+            rate_limit_seconds=0,
+        )
+
+    import_run = db.query(ImportRun).filter_by(term_id=term.term_id).one()
+    assert import_run.status == ImportStatus.FAILED
+    assert {m.source_record_id for m in db.query(Meeting)} == {"a", "b"}
+
+
+def test_run_import_retires_sections_up_to_the_threshold(db: Session, term: Term):
+    # lec_with_room.html is source_record_id "482493"; "gone" is half the term.
+    _persist_prior_sections(db, term, "482493", "gone")
+
+    result = run_import(
+        db,
+        FakeSession(_listing_handler("lec-with-room")),
+        term.term_id,
+        rate_limit_seconds=0,
+    )
+
+    assert result.status == ImportStatus.COMPLETED
+    assert {m.source_record_id for m in db.query(Meeting)} == {"482493"}
+
+
+def test_run_import_allows_a_full_retirement_when_explicitly_permitted(
+    db: Session, term: Term
+):
+    _persist_prior_sections(db, term, "a", "b")
+
+    result = run_import(
+        db,
+        FakeSession(_listing_handler("ind-no-meetings")),
+        term.term_id,
+        rate_limit_seconds=0,
+        max_retire_fraction=1.0,
+    )
+
+    assert result.status == ImportStatus.COMPLETED
+    assert db.query(Meeting).count() == 0
+
+
+def test_run_import_rejects_an_invalid_max_retire_fraction(db: Session, term: Term):
+    with pytest.raises(ValueError, match="max_retire_fraction"):
+        run_import(
+            db,
+            FakeSession(_listing_handler()),
+            term.term_id,
+            rate_limit_seconds=0,
+            max_retire_fraction=1.5,
+        )
+
+    assert db.query(ImportRun).count() == 0
 
 
 def test_building_short_code_does_not_collide_on_a_shared_long_prefix(

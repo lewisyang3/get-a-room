@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 # are two distinct Meeting rows. Mirrors Meeting's DB unique constraint.
 _MeetingKey = tuple[int, int, time, time]  # (room_id, day_of_week, start, end)
 
+
+class ImportAborted(Exception):
+    """A run's output looks too wrong to apply - the prior data is kept."""
+
+
 _TAXONOMY_TERM_RE = re.compile(r"/taxonomy/term/(\d+)/?(?:[?#]|$)")
 
 
@@ -196,6 +201,7 @@ def run_import(
     rate_limit_seconds: float,
     max_pages: int = 5000,
     parser_version: str | None = None,
+    max_retire_fraction: float = 0.5,
 ) -> ImportRun:
     """Runs the ingestion pipeline for a term and persists its output.
 
@@ -218,7 +224,15 @@ def run_import(
     picture of what's still scheduled and treating an unseen Meeting as
     "gone" would risk deleting real availability data over a transient
     failure.
+
+    Two guards abort the run (FAILED, prior data untouched) when its output
+    looks like a broken scrape rather than a real schedule change: reading
+    zero sections, or retiring more than `max_retire_fraction` of the
+    sections the term had before this run (e.g. a parser regression that
+    rejects everything). Pass 1.0 to allow a genuinely large change.
     """
+    if not 0 <= max_retire_fraction <= 1:
+        raise ValueError("max_retire_fraction must be between 0 and 1")
     term = db.get(Term, term_id)
     if term is None:
         raise ValueError(f"term {term_id} does not exist")
@@ -239,6 +253,12 @@ def run_import(
     db.add(import_run)
     db.flush()
 
+    prior_sections = {
+        source_record_id
+        for (source_record_id,) in db.query(Meeting.source_record_id)
+        .filter_by(term_id=term_id)
+        .distinct()
+    }
     seen: set[str] = set()
     building_cache: _BuildingCache = {}
     room_cache: _RoomCache = {}
@@ -246,6 +266,10 @@ def run_import(
         for section in pipeline.run(taxonomy_term_id):
             if is_accepted(section):
                 persist_section(db, term_id, section, seen, building_cache, room_cache)
+        if pipeline.stats.read == 0:
+            raise ImportAborted(
+                f"enumeration of taxonomy term {taxonomy_term_id} returned no sections"
+            )
         if pipeline.stats.failed:
             logger.warning(
                 "import run for term %s: skipping stale-meeting retirement - "
@@ -254,6 +278,16 @@ def run_import(
                 pipeline.stats.failed,
             )
         else:
+            retiring = prior_sections - seen
+            if (
+                prior_sections
+                and len(retiring) / len(prior_sections) > max_retire_fraction
+            ):
+                raise ImportAborted(
+                    f"run would retire {len(retiring)} of the term's "
+                    f"{len(prior_sections)} sections, over max_retire_fraction="
+                    f"{max_retire_fraction}"
+                )
             _retire_stale_meetings(db, term_id, seen)
 
         # The commit itself can fail (e.g. a deferred IntegrityError from an
