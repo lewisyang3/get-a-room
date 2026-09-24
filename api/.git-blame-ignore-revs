@@ -3,3 +3,6 @@
 
 # Apply ruff format across the repo
 ad341d92cb995ffb04644c7cffef9b2b406c7c83
+
+# Apply ruff format to recompute.py
+c42f583c4bc31a8247c7b2dcb34407aa358f321f
