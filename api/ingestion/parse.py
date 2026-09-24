@@ -76,7 +76,9 @@ def _split_building_room(text: str) -> tuple[str | None, str | None]:
     return match.group("building").strip(), match.group("room").strip()
 
 
-def _parse_location(location_div: Tag | None) -> tuple[str | None, str | None, str | None]:
+def _parse_location(
+    location_div: Tag | None,
+) -> tuple[str | None, str | None, str | None]:
     """Returns (building_name, room_number, location_raw)."""
     if location_div is None:
         return None, None, None
@@ -119,13 +121,19 @@ def parse_section(html: str, slug: str) -> ParsedSection:
         # observed in practice have exactly one meeting-details block, so
         # this only matters if a rare section has more than one.
         if location_raw is None:
-            building_name, room_number, location_raw = block_building, block_room, block_location_raw
+            building_name, room_number, location_raw = (
+                block_building,
+                block_room,
+                block_location_raw,
+            )
 
         if not days or time_range is None:
             continue
         start, end = time_range
         for day in days:
-            meetings.append(ParsedMeeting(day_of_week=day, start_time=start, end_time=end))
+            meetings.append(
+                ParsedMeeting(day_of_week=day, start_time=start, end_time=end)
+            )
 
     return ParsedSection(
         source_record_id=str(source_record_id),

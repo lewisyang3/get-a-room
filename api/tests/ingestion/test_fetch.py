@@ -133,7 +133,13 @@ def test_fetch_429_retries_then_raises_fetch_error():
     sleep, _ = _fake_sleep_recorder()
 
     with pytest.raises(FetchError, match="after 3 attempts") as exc_info:
-        fetch(session, "/content/limited", rate_limit_seconds=0.1, max_attempts=3, sleep=sleep)
+        fetch(
+            session,
+            "/content/limited",
+            rate_limit_seconds=0.1,
+            max_attempts=3,
+            sleep=sleep,
+        )
     assert "429" in str(exc_info.value.__cause__)
 
 
@@ -161,4 +167,10 @@ def test_fetch_gives_up_after_max_attempts():
     sleep, _ = _fake_sleep_recorder()
 
     with pytest.raises(FetchError, match="after 3 attempts"):
-        fetch(session, "/content/broken", rate_limit_seconds=0.1, max_attempts=3, sleep=sleep)
+        fetch(
+            session,
+            "/content/broken",
+            rate_limit_seconds=0.1,
+            max_attempts=3,
+            sleep=sleep,
+        )

@@ -105,4 +105,6 @@ def fetch(
 
         return response
 
-    raise FetchError(f"failed to fetch {path} after {max_attempts} attempts") from last_error
+    raise FetchError(
+        f"failed to fetch {path} after {max_attempts} attempts"
+    ) from last_error

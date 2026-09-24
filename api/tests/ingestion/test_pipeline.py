@@ -74,7 +74,9 @@ def test_pipeline_survives_a_malformed_section_page():
     assert pipeline.stats.accepted == 1
 
 
-def test_pipeline_propagates_a_taxonomy_page_fetch_failure(caplog: pytest.LogCaptureFixture):
+def test_pipeline_propagates_a_taxonomy_page_fetch_failure(
+    caplog: pytest.LogCaptureFixture,
+):
     """A failure enumerating the term (unlike a single section's fetch/parse
     failure) means we don't know what sections we missed - it must not be
     swallowed into a truncated-but-looks-successful run."""
@@ -112,7 +114,9 @@ def test_pipeline_propagates_max_pages_exceeded():
 
 def test_pipeline_logs_parse_failures_with_the_slug(caplog: pytest.LogCaptureFixture):
     taxonomy_pages = {0: '<a href="/content/broken">A</a>', 1: ""}
-    section_html = {"/content/broken": "<html><body>not a section page at all</body></html>"}
+    section_html = {
+        "/content/broken": "<html><body>not a section page at all</body></html>"
+    }
 
     def handler(path: str, params: dict | None) -> FakeResponse:
         if path.startswith("/taxonomy/term/"):
