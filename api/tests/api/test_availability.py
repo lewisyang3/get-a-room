@@ -85,9 +85,14 @@ def _get(client: TestClient, term: Term, **params):
     return client.get("/availability", params={"term_id": term.term_id, **params})
 
 
+def _results(response) -> list[dict]:
+    assert response.status_code == 200, response.text
+    return response.json()["results"]
+
+
 def _room_keys(response) -> list[tuple[str, str]]:
     assert response.status_code == 200, response.text
-    return [(r["building_name"], r["room_number"]) for r in response.json()]
+    return [(r["building_name"], r["room_number"]) for r in _results(response)]
 
 
 # --- "now" ---
@@ -102,7 +107,10 @@ def test_now_returns_rooms_free_in_the_terms_timezone(
 
     assert response.status_code == 200
     room = rooms["dwinelle_109"]
-    assert response.json() == [
+    body = response.json()
+    assert (body["total"], body["limit"], body["offset"]) == (2, 50, 0)
+    assert (body["day_of_week"], body["time"]) == (FRIDAY, "10:00")
+    assert body["results"] == [
         {
             "room_id": room.room_id,
             "building_id": room.building_id,
@@ -131,7 +139,7 @@ def test_now_is_truncated_to_the_minute(
 ):
     clock(FRIDAY_10AM_PDT.replace(second=45))
 
-    [dwinelle_109, dwinelle_242] = _get(client, term).json()
+    [dwinelle_109, dwinelle_242] = _results(_get(client, term))
 
     assert dwinelle_242["available_from"] == "10:00"
     assert dwinelle_242["available_minutes"] == 240
@@ -146,8 +154,12 @@ def test_now_uses_the_local_weekday_not_the_utc_one(
     response = _get(client, term)
 
     assert _room_keys(response) == [("Dwinelle", "242")]
-    assert response.json()[0]["available_from"] == "18:00"
-    assert response.json()[0]["available_minutes"] == 240
+    assert (response.json()["day_of_week"], response.json()["time"]) == (
+        THURSDAY,
+        "18:00",
+    )
+    assert _results(response)[0]["available_from"] == "18:00"
+    assert _results(response)[0]["available_minutes"] == 240
 
 
 @pytest.mark.parametrize(
@@ -167,7 +179,7 @@ def test_now_follows_local_clock_time_across_dst(
     response = _get(client, term)
 
     assert _room_keys(response) == [("Dwinelle", "109"), ("Dwinelle", "242")]
-    assert {r["available_from"] for r in response.json()} == {"10:00"}
+    assert {r["available_from"] for r in _results(response)} == {"10:00"}
 
 
 @pytest.mark.parametrize(
@@ -214,7 +226,7 @@ def test_a_room_is_free_again_exactly_when_its_meeting_ends(
 ):
     response = _get(client, term, day_of_week=FRIDAY, time="17:00")
 
-    [dwinelle_242] = response.json()
+    [dwinelle_242] = _results(response)
     assert dwinelle_242["available_until"] == "22:00"
     assert dwinelle_242["available_minutes"] == 300
 
