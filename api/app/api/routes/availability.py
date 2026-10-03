@@ -1,4 +1,5 @@
 from datetime import date, datetime, time, timedelta, timezone
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -38,6 +39,42 @@ def _clean_text_filter(name: str, value: str | None) -> str | None:
     if not value:
         raise HTTPException(status_code=422, detail=f"{name} must not be blank")
     return value
+
+
+# The moment a search looks at, in the term's timezone.
+class _SearchMoment(NamedTuple):
+    # The local date searched, or None for a weekday-and-time search.
+    date: date | None
+    day_of_week: int
+    time: time
+    # True when the date is outside the term, so no rooms can match.
+    outside_term: bool
+
+
+# Turns a local date and time into the moment to search.
+def _local_moment(term: Term, local: datetime) -> _SearchMoment:
+    return _SearchMoment(
+        date=local.date(),
+        day_of_week=local.weekday(),
+        time=local.time(),
+        # Outside the term, its schedule doesn't describe the rooms.
+        outside_term=not term.start_date <= local.date() <= term.end_date,
+    )
+
+
+# Works out which weekday and time to search: the ones given, or right now.
+def _resolve_search(
+    term: Term,
+    now: datetime,
+    day_of_week: int | None,
+    requested_time: time | None,
+) -> _SearchMoment:
+    # A weekday and time search every week of the term, so there's no date.
+    if day_of_week is not None and requested_time is not None:
+        return _SearchMoment(None, day_of_week, requested_time, False)
+    # Otherwise searches right now in the term's timezone, to the minute.
+    local_now = now.astimezone(ZoneInfo(term.timezone))
+    return _local_moment(term, local_now.replace(second=0, microsecond=0))
 
 
 # Returns rooms that are available at a requested time, or right now.
@@ -142,14 +179,9 @@ def get_available_rooms(
     if term is None:
         raise HTTPException(status_code=404, detail=f"term {term_id} not found")
 
-    # Resolves "now" to a weekday and time in the term's timezone.
-    outside_term = False
-    if day_of_week is None or requested_time is None:
-        local_now = now.astimezone(ZoneInfo(term.timezone))
-        day_of_week = local_now.weekday()
-        requested_time = local_now.time().replace(second=0, microsecond=0)
-        # Outside the term, its schedule doesn't describe the rooms.
-        outside_term = not term.start_date <= local_now.date() <= term.end_date
+    # Resolves the weekday and time to search, in the term's timezone.
+    moment = _resolve_search(term, now, day_of_week, requested_time)
+    day_of_week, requested_time = moment.day_of_week, moment.time
 
     # Builds a page of results for the resolved weekday and time.
     def page(total: int, results: list[AvailabilityResponse]) -> AvailabilityPage:
@@ -167,7 +199,7 @@ def get_available_rooms(
         minutes=minimum_minutes
     )
     # A minimum that runs past midnight can't be met by any room.
-    if outside_term or threshold.date() != date.min:
+    if moment.outside_term or threshold.date() != date.min:
         return page(0, [])
 
     # Builds a query joining availability intervals to rooms and buildings.
