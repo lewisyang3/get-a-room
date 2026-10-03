@@ -62,18 +62,29 @@ def _local_moment(term: Term, local: datetime) -> _SearchMoment:
     )
 
 
-# Works out which weekday and time to search: the ones given, or right now.
+# Works out which weekday and time to search: a date and time, a weekday
+# and time, or right now.
 def _resolve_search(
     term: Term,
     now: datetime,
+    at: datetime | None,
     day_of_week: int | None,
     requested_time: time | None,
 ) -> _SearchMoment:
+    term_timezone = ZoneInfo(term.timezone)
+    # A date and time: with a UTC offset it's converted to the term's
+    # timezone; without one it's already a clock time there. The hours a
+    # DST change skips or repeats (01:00-03:00) are outside the 07:00-22:00
+    # availability window, so their ambiguity can't change results.
+    if at is not None:
+        if at.tzinfo is not None:
+            return _local_moment(term, at.astimezone(term_timezone))
+        return _local_moment(term, at.replace(tzinfo=term_timezone))
     # A weekday and time search every week of the term, so there's no date.
     if day_of_week is not None and requested_time is not None:
         return _SearchMoment(None, day_of_week, requested_time, False)
     # Otherwise searches right now in the term's timezone, to the minute.
-    local_now = now.astimezone(ZoneInfo(term.timezone))
+    local_now = now.astimezone(term_timezone)
     return _local_moment(term, local_now.replace(second=0, microsecond=0))
 
 
@@ -104,6 +115,17 @@ def get_available_rooms(
             "Local time of day in the term's timezone, e.g. `14:30`, without a "
             "UTC offset. Give together with `day_of_week`; omit both to search "
             "right now."
+        ),
+    ),
+    # Specifies a calendar date and time to search.
+    at: datetime | None = Query(
+        None,
+        description=(
+            "Date and time to search, e.g. `2025-10-17T14:30`. Without a UTC "
+            "offset it's a clock time in the term's timezone; with one (`Z`, "
+            "`+09:00`) it's converted to the term's timezone. Can't be combined "
+            "with `day_of_week` or `time`. A date outside the term returns no "
+            "rooms."
         ),
     ),
     # Removes availability gaps shorter than this value.
@@ -149,12 +171,18 @@ def get_available_rooms(
 ) -> AvailabilityPage:
     """Rooms with no scheduled class at the requested time, one page at a time.
 
-    With neither `day_of_week` nor `time`, searches right now in the term's
-    own timezone, and returns no rooms when today is outside the term's
-    dates. Availability only covers 07:00-22:00, so searches outside that
+    Searches at a date and time (`at`), at a weekday and time every week
+    (`day_of_week` + `time`), or, with none of these, right now in the
+    term's own timezone. A date outside the term's dates returns no rooms. Availability only covers 07:00-22:00, so searches outside that
     window return no rooms. All filters apply together; results are sorted
     by building name, then room number.
     """
+    # Allows only one way of saying when to search.
+    if at is not None and (day_of_week is not None or requested_time is not None):
+        raise HTTPException(
+            status_code=422,
+            detail="at can't be combined with day_of_week or time",
+        )
     # Requires the weekday and time together, or neither.
     if (day_of_week is None) != (requested_time is None):
         raise HTTPException(
@@ -180,7 +208,7 @@ def get_available_rooms(
         raise HTTPException(status_code=404, detail=f"term {term_id} not found")
 
     # Resolves the weekday and time to search, in the term's timezone.
-    moment = _resolve_search(term, now, day_of_week, requested_time)
+    moment = _resolve_search(term, now, at, day_of_week, requested_time)
     day_of_week, requested_time = moment.day_of_week, moment.time
 
     # Builds a page of results for the resolved weekday and time.
