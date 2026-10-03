@@ -10,3 +10,14 @@ class AvailabilityResponse(BaseModel):
     available_from: str
     available_until: str
     available_minutes: int
+
+
+class AvailabilityPage(BaseModel):
+    """One page of available rooms, with the weekday and time searched."""
+
+    total: int
+    limit: int
+    offset: int
+    day_of_week: int
+    time: str
+    results: list[AvailabilityResponse]

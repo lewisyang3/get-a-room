@@ -85,9 +85,14 @@ def _get(client: TestClient, term: Term, **params):
     return client.get("/availability", params={"term_id": term.term_id, **params})
 
 
+def _results(response) -> list[dict]:
+    assert response.status_code == 200, response.text
+    return response.json()["results"]
+
+
 def _room_keys(response) -> list[tuple[str, str]]:
     assert response.status_code == 200, response.text
-    return [(r["building_name"], r["room_number"]) for r in response.json()]
+    return [(r["building_name"], r["room_number"]) for r in _results(response)]
 
 
 # --- "now" ---
@@ -102,7 +107,10 @@ def test_now_returns_rooms_free_in_the_terms_timezone(
 
     assert response.status_code == 200
     room = rooms["dwinelle_109"]
-    assert response.json() == [
+    body = response.json()
+    assert (body["total"], body["limit"], body["offset"]) == (2, 50, 0)
+    assert (body["day_of_week"], body["time"]) == (FRIDAY, "10:00")
+    assert body["results"] == [
         {
             "room_id": room.room_id,
             "building_id": room.building_id,
@@ -131,7 +139,7 @@ def test_now_is_truncated_to_the_minute(
 ):
     clock(FRIDAY_10AM_PDT.replace(second=45))
 
-    [dwinelle_109, dwinelle_242] = _get(client, term).json()
+    [dwinelle_109, dwinelle_242] = _results(_get(client, term))
 
     assert dwinelle_242["available_from"] == "10:00"
     assert dwinelle_242["available_minutes"] == 240
@@ -146,8 +154,12 @@ def test_now_uses_the_local_weekday_not_the_utc_one(
     response = _get(client, term)
 
     assert _room_keys(response) == [("Dwinelle", "242")]
-    assert response.json()[0]["available_from"] == "18:00"
-    assert response.json()[0]["available_minutes"] == 240
+    assert (response.json()["day_of_week"], response.json()["time"]) == (
+        THURSDAY,
+        "18:00",
+    )
+    assert _results(response)[0]["available_from"] == "18:00"
+    assert _results(response)[0]["available_minutes"] == 240
 
 
 @pytest.mark.parametrize(
@@ -167,7 +179,7 @@ def test_now_follows_local_clock_time_across_dst(
     response = _get(client, term)
 
     assert _room_keys(response) == [("Dwinelle", "109"), ("Dwinelle", "242")]
-    assert {r["available_from"] for r in response.json()} == {"10:00"}
+    assert {r["available_from"] for r in _results(response)} == {"10:00"}
 
 
 @pytest.mark.parametrize(
@@ -214,7 +226,7 @@ def test_a_room_is_free_again_exactly_when_its_meeting_ends(
 ):
     response = _get(client, term, day_of_week=FRIDAY, time="17:00")
 
-    [dwinelle_242] = response.json()
+    [dwinelle_242] = _results(response)
     assert dwinelle_242["available_until"] == "22:00"
     assert dwinelle_242["available_minutes"] == 300
 
@@ -346,3 +358,168 @@ def test_invalid_day_or_time_is_rejected(client: TestClient, term: Term, params)
 
 def test_term_id_is_required(client: TestClient):
     assert client.get("/availability").status_code == 422
+
+
+# --- building and room search (GAR-029) ---
+
+
+@pytest.fixture
+def annex_b5(db: Session, term: Term, rooms: dict[str, Room]) -> Room:
+    """A room number with a letter, in a third building, free all Friday."""
+    annex = Building(name="Hearst Field Annex", short_code="HFA")
+    db.add(annex)
+    db.flush()
+    room = _add_room(db, term, annex, "B5", {FRIDAY: [(time(7), time(22))]})
+    db.commit()
+    return room
+
+
+def _search(client: TestClient, term: Term, **params):
+    return _get(
+        client, term, day_of_week=FRIDAY, time="10:00", minimum_minutes=1, **params
+    )
+
+
+@pytest.mark.parametrize("code", ["DWINELLE", "dwinelle", "DwInElLe"])
+def test_building_code_matches_ignoring_case(
+    client: TestClient, term: Term, rooms: dict[str, Room], code: str
+):
+    response = _search(client, term, building_code=code)
+
+    assert _room_keys(response) == [("Dwinelle", "109"), ("Dwinelle", "242")]
+
+
+def test_building_code_must_match_exactly(
+    client: TestClient, term: Term, rooms: dict[str, Room]
+):
+    response = _search(client, term, building_code="DWIN")
+
+    assert response.json()["total"] == 0
+    assert _room_keys(response) == []
+
+
+@pytest.mark.parametrize("name", ["dwin", "WINE", "Dwinelle"])
+def test_building_name_matches_part_of_the_name_ignoring_case(
+    client: TestClient, term: Term, rooms: dict[str, Room], name: str
+):
+    response = _search(client, term, building=name)
+
+    assert _room_keys(response) == [("Dwinelle", "109"), ("Dwinelle", "242")]
+
+
+@pytest.mark.parametrize("wildcard", ["%", "_", "D%e"])
+def test_building_name_treats_wildcards_literally(
+    client: TestClient, term: Term, rooms: dict[str, Room], wildcard: str
+):
+    assert _room_keys(_search(client, term, building=wildcard)) == []
+
+
+def test_room_matches_exactly(client: TestClient, term: Term, rooms: dict[str, Room]):
+    assert _room_keys(_search(client, term, room="242")) == [("Dwinelle", "242")]
+    assert _room_keys(_search(client, term, room="24")) == []
+    assert _room_keys(_search(client, term, room=" 242 ")) == [("Dwinelle", "242")]
+
+
+def test_room_matches_ignoring_case(client: TestClient, term: Term, annex_b5: Room):
+    assert _room_keys(_search(client, term, room="b5")) == [
+        ("Hearst Field Annex", "B5")
+    ]
+
+
+def test_building_and_room_filters_apply_together(
+    client: TestClient, term: Term, rooms: dict[str, Room], annex_b5: Room
+):
+    assert _room_keys(_search(client, term, building_code="dwinelle", room="242")) == [
+        ("Dwinelle", "242")
+    ]
+    assert _room_keys(_search(client, term, building="annex", room="b5")) == [
+        ("Hearst Field Annex", "B5")
+    ]
+    # Each filter matches something, but no room matches both.
+    assert _room_keys(_search(client, term, building_code="HFA", room="242")) == []
+    assert (
+        _room_keys(
+            _search(
+                client,
+                term,
+                building_id=rooms["dwinelle_242"].building_id,
+                building_code="ETCHEVERRY",
+            )
+        )
+        == []
+    )
+
+
+# --- paging (GAR-029) ---
+
+
+def test_pages_cover_every_room_once_in_order(
+    client: TestClient, term: Term, rooms: dict[str, Room]
+):
+    pages = [_search(client, term, limit=1, offset=offset) for offset in range(3)]
+
+    assert [response.json()["total"] for response in pages] == [3, 3, 3]
+    assert [_room_keys(response) for response in pages] == [
+        [("Dwinelle", "109")],
+        [("Dwinelle", "242")],
+        [("Etcheverry", "3106")],
+    ]
+
+
+def test_a_page_past_the_end_is_empty_but_keeps_the_total(
+    client: TestClient, term: Term, rooms: dict[str, Room]
+):
+    response = _search(client, term, limit=2, offset=10)
+
+    body = response.json()
+    assert (body["total"], body["limit"], body["offset"]) == (3, 2, 10)
+    assert body["results"] == []
+
+
+def test_short_gaps_are_dropped_before_paging(
+    client: TestClient, term: Term, rooms: dict[str, Room], annex_b5: Room
+):
+    """The 59-minute room sorts between the others; dropping it after
+    LIMIT would leave this page short and miscount the total."""
+    response = _get(client, term, day_of_week=FRIDAY, time="10:00", limit=2)
+
+    assert response.json()["total"] == 3
+    assert _room_keys(response) == [("Dwinelle", "109"), ("Dwinelle", "242")]
+    next_page = _get(client, term, day_of_week=FRIDAY, time="10:00", limit=2, offset=2)
+    assert _room_keys(next_page) == [("Hearst Field Annex", "B5")]
+
+
+def test_a_minimum_running_past_midnight_matches_nothing(
+    client: TestClient, term: Term, rooms: dict[str, Room]
+):
+    response = _get(client, term, day_of_week=FRIDAY, time="21:00", minimum_minutes=181)
+
+    body = response.json()
+    assert (body["total"], body["results"]) == (0, [])
+    assert (body["day_of_week"], body["time"]) == (FRIDAY, "21:00")
+
+
+def test_now_outside_the_term_still_reports_the_moment_searched(
+    client: TestClient, term: Term, rooms: dict[str, Room], clock
+):
+    clock(datetime(2025, 8, 22, 17, 0, tzinfo=timezone.utc))
+
+    body = _get(client, term).json()
+
+    assert (body["total"], body["day_of_week"], body["time"]) == (0, FRIDAY, "10:00")
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"limit": 0},
+        {"limit": 201},
+        {"offset": -1},
+        {"room": ""},
+        {"room": " "},
+        {"building": " "},
+        {"building_code": ""},
+    ],
+)
+def test_invalid_search_or_paging_is_rejected(client: TestClient, term: Term, params):
+    assert _search(client, term, **params).status_code == 422

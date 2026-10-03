@@ -33,7 +33,9 @@ def _available(
         params={"term_id": term_id, "day_of_week": day_of_week, "time": at},
     )
     assert response.status_code == 200
-    return {(r["building_name"], r["room_number"]): r for r in response.json()}
+    return {
+        (r["building_name"], r["room_number"]): r for r in response.json()["results"]
+    }
 
 
 def test_an_imported_room_is_available_until_its_next_meeting(

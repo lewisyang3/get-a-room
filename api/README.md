@@ -143,14 +143,36 @@ how long each stays free, and the room and building ids. Interactive docs are at
 curl 'http://localhost:8000/availability?term_id=1'
 # Fridays at 14:30, rooms free for at least 90 minutes:
 curl 'http://localhost:8000/availability?term_id=1&day_of_week=4&time=14:30&minimum_minutes=90'
+# Dwinelle 242, right now:
+curl 'http://localhost:8000/availability?term_id=1&building=dwinelle&room=242'
+```
+
+Responses are one page of results:
+
+```json
+{"total": 42, "limit": 50, "offset": 0, "day_of_week": 4, "time": "14:30",
+ "results": [{"room_id": 7, "building_id": 2, "building_code": "DWINELLE",
+              "building_name": "Dwinelle", "room_number": "242",
+              "available_from": "14:30", "available_until": "17:00",
+              "available_minutes": 150}]}
 ```
 
 - `day_of_week` (0 = Monday) and `time` go together; omit both to search now.
   Times are local to the term's `timezone`, so daylight saving time doesn't
-  shift results.
+  shift results. The response's `day_of_week` and `time` are what was
+  searched, so they show what "now" meant.
 - Searching now outside the term's start and end dates returns no rooms.
 - Availability only covers 07:00–22:00; searches outside it return no rooms.
 - `minimum_minutes` defaults to 60 (1–1440). An unknown term is a 404.
+- Filters, all optional and all applied together:
+  - `building_id`
+  - `building_code`: exact match, ignoring case
+  - `building`: part of the building name, ignoring case
+  - `room`: exact room number, ignoring case
+
+  A filter that matches nothing returns `total: 0`, not an error.
+- Results are sorted by building name, then room number. `limit` (default
+  50, at most 200) and `offset` select a page; `total` counts every match.
 
 ## Running tests and lint locally
 

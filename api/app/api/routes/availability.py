@@ -1,11 +1,11 @@
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.schemas.availability import AvailabilityResponse
+from app.api.schemas.availability import AvailabilityPage, AvailabilityResponse
 from app.db import get_db
 from app.models.models import AvailabilityInterval, Building, Room, Term
 
@@ -23,13 +23,27 @@ def get_now() -> datetime:
 
 # Converts a time of day to minutes since midnight, for duration math.
 def _minutes_since_midnight(value: time) -> float:
-    return value.hour * 60 + value.minute + value.second / 60
+    return (
+        value.hour * 60
+        + value.minute
+        + (value.second + value.microsecond / 1_000_000) / 60
+    )
+
+
+# Trims a text filter, rejecting one that is only whitespace.
+def _clean_text_filter(name: str, value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        raise HTTPException(status_code=422, detail=f"{name} must not be blank")
+    return value
 
 
 # Returns rooms that are available at a requested time, or right now.
 @router.get(
     "",
-    response_model=list[AvailabilityResponse],
+    response_model=AvailabilityPage,
     responses={404: {"description": "The term does not exist."}},
 )
 def get_available_rooms(
@@ -66,17 +80,43 @@ def get_available_rooms(
     building_id: int | None = Query(
         None, description="Only return rooms in this building."
     ),
+    # Optionally limits results to one building code, ignoring case.
+    building_code: str | None = Query(
+        None,
+        min_length=1,
+        description="Only return rooms in the building with this exact code, "
+        "ignoring case, e.g. `dwinelle`.",
+    ),
+    # Optionally limits results to buildings whose name contains this text.
+    building: str | None = Query(
+        None,
+        min_length=1,
+        description="Only return rooms in buildings whose name contains this "
+        "text, ignoring case, e.g. `dwin`.",
+    ),
+    # Optionally limits results to one room number, ignoring case.
+    room: str | None = Query(
+        None,
+        min_length=1,
+        description="Only return rooms with exactly this room number, ignoring "
+        "case, e.g. `242`.",
+    ),
+    # Caps how many rooms one response returns.
+    limit: int = Query(50, ge=1, le=200, description="Rooms per page, 1-200."),
+    # Skips this many rooms, for later pages.
+    offset: int = Query(0, ge=0, description="Rooms to skip before this page."),
     # Gets a database session from FastAPI.
     db: Session = Depends(get_db),
     # Gets the current time from FastAPI.
     now: datetime = Depends(get_now),
-) -> list[AvailabilityResponse]:
-    """Rooms with no scheduled class at the requested time.
+) -> AvailabilityPage:
+    """Rooms with no scheduled class at the requested time, one page at a time.
 
     With neither `day_of_week` nor `time`, searches right now in the term's
     own timezone, and returns no rooms when today is outside the term's
     dates. Availability only covers 07:00-22:00, so searches outside that
-    window return no rooms.
+    window return no rooms. All filters apply together; results are sorted
+    by building name, then room number.
     """
     # Requires the weekday and time together, or neither.
     if (day_of_week is None) != (requested_time is None):
@@ -92,19 +132,43 @@ def get_available_rooms(
             "without a UTC offset",
         )
 
+    # Trims the text filters, rejecting ones that are only whitespace.
+    building_code = _clean_text_filter("building_code", building_code)
+    building = _clean_text_filter("building", building)
+    room = _clean_text_filter("room", room)
+
     # Looks up the term so a missing one isn't mistaken for "no rooms free".
     term = db.get(Term, term_id)
     if term is None:
         raise HTTPException(status_code=404, detail=f"term {term_id} not found")
 
     # Resolves "now" to a weekday and time in the term's timezone.
+    outside_term = False
     if day_of_week is None or requested_time is None:
         local_now = now.astimezone(ZoneInfo(term.timezone))
-        # Outside the term, its schedule doesn't describe the rooms.
-        if not term.start_date <= local_now.date() <= term.end_date:
-            return []
         day_of_week = local_now.weekday()
         requested_time = local_now.time().replace(second=0, microsecond=0)
+        # Outside the term, its schedule doesn't describe the rooms.
+        outside_term = not term.start_date <= local_now.date() <= term.end_date
+
+    # Builds a page of results for the resolved weekday and time.
+    def page(total: int, results: list[AvailabilityResponse]) -> AvailabilityPage:
+        return AvailabilityPage(
+            total=total,
+            limit=limit,
+            offset=offset,
+            day_of_week=day_of_week,
+            time=requested_time.strftime("%H:%M"),
+            results=results,
+        )
+
+    # Finds the earliest end time that still leaves the minimum free time.
+    threshold = datetime.combine(date.min, requested_time) + timedelta(
+        minutes=minimum_minutes
+    )
+    # A minimum that runs past midnight can't be met by any room.
+    if outside_term or threshold.date() != date.min:
+        return page(0, [])
 
     # Builds a query joining availability intervals to rooms and buildings.
     statement = (
@@ -116,6 +180,8 @@ def get_available_rooms(
             AvailabilityInterval.day_of_week == day_of_week,
             AvailabilityInterval.start_time <= requested_time,
             AvailabilityInterval.end_time > requested_time,
+            # Keeps only intervals at least minimum_minutes long from now on.
+            AvailabilityInterval.end_time >= threshold.time(),
             Room.in_use.is_(True),
             Building.included_in_coverage.is_(True),
         )
@@ -124,6 +190,27 @@ def get_available_rooms(
     # Adds the building filter only when one was provided.
     if building_id is not None:
         statement = statement.where(Building.building_id == building_id)
+    # Adds the remaining filters the same way; they all apply together.
+    if building_code is not None:
+        statement = statement.where(
+            func.lower(Building.short_code) == building_code.lower()
+        )
+    if building is not None:
+        # autoescape matches % and _ literally instead of as wildcards.
+        statement = statement.where(Building.name.icontains(building, autoescape=True))
+    if room is not None:
+        statement = statement.where(func.lower(Room.room_number) == room.lower())
+
+    # Counts every match, before paging.
+    total = db.scalar(select(func.count()).select_from(statement.subquery()))
+
+    # Sorts by building name and room number, then id as a tiebreak, and
+    # takes one page so the order stays the same from page to page.
+    statement = (
+        statement.order_by(Building.name, Room.room_number, Room.room_id)
+        .limit(limit)
+        .offset(offset)
+    )
 
     # Runs the query and retrieves the matching rows.
     rows = db.execute(statement).all()
@@ -132,39 +219,26 @@ def get_available_rooms(
     results: list[AvailabilityResponse] = []
 
     # Processes each available interval.
-    for interval, room, building in rows:
+    for interval, matched_room, matched_building in rows:
         # Calculates the number of available minutes.
         available_minutes = int(
             _minutes_since_midnight(interval.end_time)
             - _minutes_since_midnight(requested_time)
         )
 
-        # Skips intervals shorter than the requested minimum.
-        if available_minutes < minimum_minutes:
-            continue
-
         # Adds the room to the response.
         results.append(
             AvailabilityResponse(
-                room_id=room.room_id,
-                building_id=building.building_id,
-                building_code=building.short_code,
-                building_name=building.name,
-                room_number=room.room_number,
+                room_id=matched_room.room_id,
+                building_id=matched_building.building_id,
+                building_code=matched_building.short_code,
+                building_name=matched_building.name,
+                room_number=matched_room.room_number,
                 available_from=requested_time.strftime("%H:%M"),
                 available_until=interval.end_time.strftime("%H:%M"),
                 available_minutes=available_minutes,
             )
         )
 
-    # Sorts results by building name and room number, then id as a tiebreak.
-    results.sort(
-        key=lambda result: (
-            result.building_name,
-            result.room_number,
-            result.room_id,
-        )
-    )
-
-    # Returns the available rooms.
-    return results
+    # Returns this page of available rooms.
+    return page(total, results)
