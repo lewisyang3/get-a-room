@@ -2,7 +2,7 @@ import pytest
 from curl_cffi.requests.exceptions import ConnectionError, InvalidURL, Timeout
 
 from ingestion.fetch import FetchError, fetch
-from tests.ingestion.conftest import FakeResponse, FakeSession
+from tests.conftest import FakeResponse, FakeSession
 
 
 def _fake_sleep_recorder():

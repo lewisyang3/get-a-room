@@ -1,7 +1,7 @@
 import pytest
 
 from ingestion.enumerate import enumerate_section_urls
-from tests.ingestion.conftest import FakeResponse, FakeSession
+from tests.conftest import FakeResponse, FakeSession
 
 _PAGES = {
     0: '<a href="/content/course-a-lec-001">A</a> <a href="/content/course-b-lec-001">B</a>',

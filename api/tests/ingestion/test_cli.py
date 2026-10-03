@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 import ingestion.cli
 from app.models.models import ImportRun, ImportStatus, Meeting, Term, TermStatus
 from ingestion.cli import main
-from tests.ingestion.conftest import (
+from tests.conftest import (
     FakeResponse,
     FakeSession,
     listing_handler,

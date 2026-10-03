@@ -1,24 +1,26 @@
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, time
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
-from app.db import Base
+from app.db import Base, get_db
+from app.main import app
 from app.models.models import Term, TermStatus
 from ingestion.persist import persist_section
 from ingestion.types import ParsedMeeting, ParsedSection
 
 
 TERM_SOURCE_URL = "https://classes.berkeley.edu/taxonomy/term/8573"
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "sections"
+FIXTURES = Path(__file__).parent / "fixtures" / "sections"
 
 
 @dataclass
@@ -199,3 +201,13 @@ def term(db: Session) -> Term:
     db.commit()
     db.refresh(term)
     return term
+
+
+@pytest.fixture
+def client(db: Session) -> Iterator[TestClient]:
+    """The real app, reading from the test database session."""
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.pop(get_db, None)

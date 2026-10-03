@@ -24,7 +24,7 @@ from ingestion.persist import (
     taxonomy_term_id,
 )
 from ingestion.types import ParsedMeeting
-from tests.ingestion.conftest import (
+from tests.conftest import (
     FIXTURES,
     FakeResponse,
     FakeSession,

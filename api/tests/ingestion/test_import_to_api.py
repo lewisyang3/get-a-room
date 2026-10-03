@@ -1,26 +1,14 @@
-from collections.abc import Iterator
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.db import get_db
-from app.main import app
-from app.models.models import ImportStatus, Term
+from app.models.models import Building, ImportStatus, Room, Term
 from ingestion.persist import run_import
-from tests.ingestion.conftest import FakeSession, listing_handler
+from tests.conftest import FakeSession, listing_handler
 
 FRIDAY = 4
-
-
-@pytest.fixture
-def client(db: Session) -> Iterator[TestClient]:
-    """The real app, reading from the test database session."""
-    app.dependency_overrides[get_db] = lambda: db
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture
@@ -49,11 +37,20 @@ def _available(
 
 
 def test_an_imported_room_is_available_until_its_next_meeting(
-    client: TestClient, imported_term: Term
+    client: TestClient, db: Session, imported_term: Term
 ):
     rooms = _available(client, imported_term.term_id, "10:00")
 
+    room = (
+        db.query(Room)
+        .join(Building)
+        .filter(Building.name == "Dwinelle", Room.room_number == "242")
+        .one()
+    )
     assert rooms[("Dwinelle", "242")] == {
+        "room_id": room.room_id,
+        "building_id": room.building_id,
+        "building_code": "DWINELLE",
         "building_name": "Dwinelle",
         "room_number": "242",
         "available_from": "10:00",
@@ -82,5 +79,16 @@ def test_an_imported_room_is_available_from_the_moment_its_meeting_ends(
     assert rooms[("Dwinelle", "242")]["available_minutes"] == 300
 
 
-def test_another_terms_availability_is_empty(client: TestClient, imported_term: Term):
-    assert _available(client, imported_term.term_id + 1, "10:00") == {}
+def test_another_terms_availability_is_empty(
+    client: TestClient, db: Session, imported_term: Term
+):
+    other_term = Term(
+        name="Spring 2026",
+        start_date=date(2026, 1, 20),
+        end_date=date(2026, 5, 15),
+        source_url="https://classes.berkeley.edu/taxonomy/term/8600",
+    )
+    db.add(other_term)
+    db.commit()
+
+    assert _available(client, other_term.term_id, "10:00") == {}
