@@ -217,6 +217,7 @@ def get_available_rooms(
             total=total,
             limit=limit,
             offset=offset,
+            date=moment.date,
             day_of_week=day_of_week,
             time=requested_time.strftime("%H:%M"),
             results=results,
