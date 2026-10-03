@@ -233,9 +233,19 @@ def test_term_list_orders_terms_by_start_date(cli, capsys):
     assert cli("term", "list") == 0
 
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0].split() == ["ID", "NAME", "START", "END", "STATUS", "SOURCE", "URL"]
+    assert lines[0].split() == [
+        "ID",
+        "NAME",
+        "START",
+        "END",
+        "STATUS",
+        "PROCESSED",
+        "SOURCE",
+        "URL",
+    ]
     assert "Fall 2026" in lines[1] and SOURCE_URL in lines[1]
     assert "Spring 2027" in lines[2]
+    assert all(" never " in line for line in lines[1:])
 
 
 @pytest.mark.parametrize("ref", ["id", "name"])
@@ -338,6 +348,19 @@ def test_import_run_completes_and_exits_0(cli, db: Session, created_term, caplog
     assert "COMPLETED" in caplog.text
     assert "2 read, 1 imported, 1 rejected, 0 failed" in caplog.text
     assert session.closed
+
+
+def test_term_list_shows_when_the_last_import_completed(
+    cli, db: Session, created_term, capsys
+):
+    assert cli(*_import_args(), session=_session("lec-with-room")) == 0
+    [run] = _import_runs(db)
+    capsys.readouterr()
+
+    assert cli("term", "list") == 0
+
+    expected = run.completed_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+    assert expected in capsys.readouterr().out.splitlines()[1]
 
 
 def test_import_run_exits_3_when_a_section_fails(

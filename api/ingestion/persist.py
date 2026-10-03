@@ -275,6 +275,11 @@ def run_import(
     zero sections, or retiring more than `max_retire_fraction` of the
     sections the term had before this run (e.g. a parser regression that
     rejects everything). Pass 1.0 to allow a genuinely large change.
+
+    A completed run stamps the term's `fetched_at` (when the scrape finished)
+    and `processed_at` (equal to the run's `completed_at`) in the same commit;
+    a failed run rolls them back with everything else, so they always
+    describe the term's last usable dataset.
     """
     if not 0 <= max_retire_fraction <= 1:
         raise ValueError("max_retire_fraction must be between 0 and 1")
@@ -320,6 +325,7 @@ def run_import(
             raise ImportAborted(
                 f"enumeration of taxonomy term {taxonomy_id} returned no sections"
             )
+        fetched_at = datetime.now(timezone.utc)
         if pipeline.stats.failed:
             logger.warning(
                 "import run for term %s: skipping stale-meeting retirement - "
@@ -352,7 +358,10 @@ def run_import(
         )
         import_run.computation_version = "availability-v1"
         import_run.status = ImportStatus.COMPLETED
-        import_run.completed_at = datetime.now(timezone.utc)
+        completed_at = datetime.now(timezone.utc)
+        import_run.completed_at = completed_at
+        term.fetched_at = fetched_at
+        term.processed_at = completed_at
         import_run.records_read = pipeline.stats.read
         import_run.records_imported = pipeline.stats.accepted
         import_run.records_rejected = pipeline.stats.rejected

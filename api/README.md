@@ -80,8 +80,11 @@ e.g. `docker compose run --rm api python -m ingestion.cli term list`.
 `import run` scrapes every section in the term, one request per
 `SCRAPER_RATE_LIMIT_SECONDS` (a full term is thousands of requests - expect it
 to take a while), logs progress every 100 sections, recomputes the term's
-availability, and records the run as an `ImportRun`. Re-running is safe:
-meetings are upserted, and ones the term no longer lists are removed. Options:
+availability, and records the run as an `ImportRun`. A completed run also
+stamps the term's `processed_at` (shown as `PROCESSED` in `term list`); a
+failed run leaves it unchanged, so it always says when the term's current data
+was imported. Re-running is safe: meetings are upserted, and ones the term no
+longer lists are removed. Options:
 
 - `--max-retire-fraction F` (default `0.5`) — abort, keeping the existing
   data, if the run would remove more than this fraction of the term's
