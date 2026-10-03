@@ -1,13 +1,15 @@
+import contextlib
 import hashlib
 import logging
 import re
 from datetime import datetime, time, timezone
+from urllib.parse import urlsplit
 
 from sqlalchemy.orm import Session
 
 from app.models.availability.recompute import recompute_availability
 from app.models.models import Building, ImportRun, ImportStatus, Meeting, Room, Term
-from ingestion.fetch import SectionSession
+from ingestion.fetch import BASE_URL, SectionSession
 from ingestion.filter import is_accepted
 from ingestion.pipeline import IngestionPipeline
 from ingestion.types import ParsedSection
@@ -25,22 +27,56 @@ class ImportAborted(Exception):
     """A run's output looks too wrong to apply - the prior data is kept."""
 
 
-_TAXONOMY_TERM_RE = re.compile(r"/taxonomy/term/(\d+)/?(?:[?#]|$)")
+PARSER_VERSION_MAX_LENGTH = ImportRun.__table__.c.parser_version.type.length
+
+_TAXONOMY_PATH_RE = re.compile(r"/taxonomy/term/([0-9]+)/?")
 
 
-def _taxonomy_term_id(source_url: str | None) -> int:
+def taxonomy_term_id(source_url: str | None) -> int:
     """Extracts Berkeley's taxonomy term id from a Term's source_url.
 
     The database's Term.term_id and Berkeley's taxonomy id (e.g. 8573) are
     unrelated numbers - the scrape must always go by the latter.
+
+    Only the exact form https://classes.berkeley.edu/taxonomy/term/{id} is
+    accepted. The fetcher always requests BASE_URL with just the id, so a
+    looser check would let a mistyped host or path silently import
+    whatever Berkeley term that id happens to be. Whitespace and control
+    characters are rejected outright, before urlsplit - which silently
+    strips or removes some of them (e.g. "85\n73" would parse as 8573).
     """
-    match = _TAXONOMY_TERM_RE.search(source_url or "")
+    if source_url is not None and any(
+        ord(char) <= 32 or ord(char) == 127 or char.isspace() for char in source_url
+    ):
+        raise ValueError(
+            f"term source_url {source_url!r} contains whitespace or control "
+            "characters"
+        )
+    base = urlsplit(BASE_URL)
+    try:
+        parts = urlsplit(source_url or "")
+    except ValueError:
+        parts = None
+    match = (
+        _TAXONOMY_PATH_RE.fullmatch(parts.path)
+        if parts is not None
+        and parts.scheme == base.scheme
+        and parts.netloc.lower() == base.netloc
+        and not parts.query
+        and not parts.fragment
+        else None
+    )
     if match is None:
         raise ValueError(
-            f"term source_url {source_url!r} is not a classes.berkeley.edu "
-            "/taxonomy/term/{id} URL"
+            f"term source_url {source_url!r} is not a "
+            f"{BASE_URL}/taxonomy/term/{{id}} URL"
         )
     return int(match.group(1))
+
+
+def canonical_source_url(taxonomy_id: int) -> str:
+    """The one spelling of a taxonomy term's URL that gets stored."""
+    return f"{BASE_URL}/taxonomy/term/{taxonomy_id}"
 
 
 def _building_short_code(name: str) -> str:
@@ -191,6 +227,9 @@ def _retire_stale_meetings(db: Session, term_id: int, seen: set[str]) -> int:
     ]
     for meeting in stale:
         db.delete(meeting)
+    # autoflush is off - flush so the availability recompute that follows
+    # in the same run doesn't still see the deleted meetings.
+    db.flush()
     return len(stale)
 
 
@@ -211,12 +250,17 @@ def run_import(
     written, including the ImportRun (it's a caller error, not a failed run).
 
     Commits only happen once, at the very end - never mid-run - so a crash
-    can't leave a half-written ImportRun row. On any failure, the session is
-    rolled back (discarding this run's in-progress work entirely, including
-    the not-yet-committed RUNNING ImportRun insert - a failed run persists
-    nothing but a record of its own failure) and a fresh ImportRun row is
-    inserted with status=FAILED, then the exception is re-raised: propagated,
-    not swallowed, matching the pipeline's own enumeration-failure handling.
+    can't leave a half-written ImportRun row. On any failure after the
+    argument checks - including a KeyboardInterrupt, which the CLI also
+    raises for SIGTERM - the traceback is logged, the session is rolled back
+    (discarding this run's in-progress work entirely, including the
+    not-yet-committed RUNNING ImportRun insert - a failed run persists
+    nothing but a record of its own failure), and a fresh ImportRun row is
+    inserted with status=FAILED. The original exception is then re-raised,
+    with the FAILED row's id attached as `exc.import_run_id`. If recording
+    the FAILED row itself fails (e.g. the database is unreachable), that is
+    logged and the original exception is still the one re-raised, without
+    `import_run_id`.
 
     Stale-meeting retirement only runs when the pipeline reports zero
     per-section failures this run - the pipeline swallows individual
@@ -234,42 +278,47 @@ def run_import(
     """
     if not 0 <= max_retire_fraction <= 1:
         raise ValueError("max_retire_fraction must be between 0 and 1")
+    if parser_version is not None and len(parser_version) > PARSER_VERSION_MAX_LENGTH:
+        raise ValueError(
+            f"parser_version must be at most {PARSER_VERSION_MAX_LENGTH} characters"
+        )
     term = db.get(Term, term_id)
     if term is None:
         raise ValueError(f"term {term_id} does not exist")
     source_url = term.source_url
-    taxonomy_term_id = _taxonomy_term_id(source_url)
+    taxonomy_id = taxonomy_term_id(source_url)
 
     pipeline = IngestionPipeline(
         session, rate_limit_seconds=rate_limit_seconds, max_pages=max_pages
     )
     started_at = datetime.now(timezone.utc)
-    import_run = ImportRun(
-        term_id=term_id,
-        started_at=started_at,
-        source_url=source_url,
-        parser_version=parser_version,
-        status=ImportStatus.RUNNING,
-    )
-    db.add(import_run)
-    db.flush()
-
-    prior_sections = {
-        source_record_id
-        for (source_record_id,) in db.query(Meeting.source_record_id)
-        .filter_by(term_id=term_id)
-        .distinct()
-    }
     seen: set[str] = set()
     building_cache: _BuildingCache = {}
     room_cache: _RoomCache = {}
     try:
-        for section in pipeline.run(taxonomy_term_id):
+        # Inside the try: a failure here must still record a FAILED run.
+        import_run = ImportRun(
+            term_id=term_id,
+            started_at=started_at,
+            source_url=source_url,
+            parser_version=parser_version,
+            status=ImportStatus.RUNNING,
+        )
+        db.add(import_run)
+        db.flush()
+
+        prior_sections = {
+            source_record_id
+            for (source_record_id,) in db.query(Meeting.source_record_id)
+            .filter_by(term_id=term_id)
+            .distinct()
+        }
+        for section in pipeline.run(taxonomy_id):
             if is_accepted(section):
                 persist_section(db, term_id, section, seen, building_cache, room_cache)
         if pipeline.stats.read == 0:
             raise ImportAborted(
-                f"enumeration of taxonomy term {taxonomy_term_id} returned no sections"
+                f"enumeration of taxonomy term {taxonomy_id} returned no sections"
             )
         if pipeline.stats.failed:
             logger.warning(
@@ -309,28 +358,46 @@ def run_import(
         import_run.records_rejected = pipeline.stats.rejected
         import_run.records_failed = pipeline.stats.failed
         db.commit()
-    except Exception as exc:
+    except (Exception, KeyboardInterrupt) as exc:
+        # Known narrow window: an interrupt that lands after the server has
+        # committed the COMPLETED run but before commit() returns ends up
+        # here too, so a FAILED row is added beside the COMPLETED one.
+        # Accepted as rare rather than worked around.
         logger.exception("import run for term %s failed", term_id)
-        db.rollback()
-        failed_run = ImportRun(
-            term_id=term_id,
-            started_at=started_at,
-            completed_at=datetime.now(timezone.utc),
-            source_url=source_url,
-            parser_version=parser_version,
-            records_read=pipeline.stats.read,
-            # Not pipeline.stats.accepted: db.rollback() above discarded
-            # every upsert this run made, so the true persisted count is
-            # always 0 here, regardless of how many sections were
-            # classified as accepted before the failure.
-            records_imported=0,
-            records_rejected=pipeline.stats.rejected,
-            records_failed=pipeline.stats.failed,
-            status=ImportStatus.FAILED,
-            error_message=str(exc)[:2000],
-        )
-        db.add(failed_run)
-        db.commit()
+        try:
+            db.rollback()
+            failed_run = ImportRun(
+                term_id=term_id,
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+                source_url=source_url,
+                parser_version=parser_version,
+                records_read=pipeline.stats.read,
+                # Not pipeline.stats.accepted: db.rollback() above discarded
+                # every upsert this run made, so the true persisted count is
+                # always 0 here, regardless of how many sections were
+                # classified as accepted before the failure.
+                records_imported=0,
+                records_rejected=pipeline.stats.rejected,
+                records_failed=pipeline.stats.failed,
+                status=ImportStatus.FAILED,
+                # KeyboardInterrupt() has an empty message.
+                error_message=(str(exc) or type(exc).__name__)[:2000],
+            )
+            db.add(failed_run)
+            db.flush()
+            # Read before commit, which expires it and would need a reload.
+            failed_run_id = failed_run.import_id
+            db.commit()
+        except Exception:
+            # Keep the original failure as the one that propagates.
+            logger.exception(
+                "could not record the FAILED ImportRun for term %s", term_id
+            )
+            with contextlib.suppress(Exception):
+                db.rollback()
+        else:
+            exc.import_run_id = failed_run_id
         raise
 
     return import_run

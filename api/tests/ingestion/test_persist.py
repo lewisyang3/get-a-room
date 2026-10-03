@@ -1,5 +1,4 @@
 from datetime import time
-from pathlib import Path
 
 import pytest
 from sqlalchemy import event
@@ -7,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.models import (
+    AvailabilityInterval,
     Building,
     ImportRun,
     ImportStatus,
@@ -21,39 +21,21 @@ from ingestion.persist import (
     _retire_stale_meetings,
     persist_section,
     run_import,
+    taxonomy_term_id,
 )
-from ingestion.types import ParsedMeeting, ParsedSection
-from tests.ingestion.conftest import FakeResponse, FakeSession
-
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "sections"
-
-
-def _section(
-    source_record_id: str = "1",
-    building_name: str = "Dwinelle Hall",
-    room_number: str = "242",
-    meetings: list[ParsedMeeting] | None = None,
-    section_type: str = "LEC",
-) -> ParsedSection:
-    section = ParsedSection(
-        source_record_id=source_record_id,
-        slug=f"section-{source_record_id}",
-        section_type=section_type,
-        building_name=building_name,
-        room_number=room_number,
-        location_raw=f"{building_name} {room_number}",
-        meetings=meetings
-        if meetings is not None
-        else [
-            ParsedMeeting(day_of_week=0, start_time=time(14, 0), end_time=time(15, 0))
-        ],
-    )
-    section.rejection_reason = None
-    return section
+from ingestion.types import ParsedMeeting
+from tests.ingestion.conftest import (
+    FIXTURES,
+    FakeResponse,
+    FakeSession,
+    listing_handler,
+    make_section,
+    persist_prior_sections,
+)
 
 
 def test_persist_section_creates_building_room_and_meeting(db: Session, term: Term):
-    section = _section()
+    section = make_section()
     persist_section(db, term.term_id, section, seen=set())
     db.commit()
 
@@ -74,7 +56,7 @@ def test_persist_section_creates_building_room_and_meeting(db: Session, term: Te
 
 
 def test_persist_section_is_idempotent(db: Session, term: Term):
-    section = _section()
+    section = make_section()
     persist_section(db, term.term_id, section, seen=set())
     db.commit()
     first_id = (
@@ -84,7 +66,7 @@ def test_persist_section_is_idempotent(db: Session, term: Term):
         .meeting_id
     )
 
-    persist_section(db, term.term_id, _section(), seen=set())
+    persist_section(db, term.term_id, make_section(), seen=set())
     db.commit()
 
     meetings = db.query(Meeting).filter_by(source_record_id="1", day_of_week=0).all()
@@ -93,10 +75,10 @@ def test_persist_section_is_idempotent(db: Session, term: Term):
 
 
 def test_persist_section_updates_changed_meeting_time(db: Session, term: Term):
-    persist_section(db, term.term_id, _section(), seen=set())
+    persist_section(db, term.term_id, make_section(), seen=set())
     db.commit()
 
-    changed = _section(
+    changed = make_section(
         meetings=[
             ParsedMeeting(day_of_week=0, start_time=time(16, 0), end_time=time(17, 0))
         ]
@@ -112,8 +94,8 @@ def test_persist_section_updates_changed_meeting_time(db: Session, term: Term):
 def test_persist_section_reuses_building_and_room_across_sections(
     db: Session, term: Term
 ):
-    persist_section(db, term.term_id, _section(source_record_id="1"), seen=set())
-    persist_section(db, term.term_id, _section(source_record_id="2"), seen=set())
+    persist_section(db, term.term_id, make_section(source_record_id="1"), seen=set())
+    persist_section(db, term.term_id, make_section(source_record_id="2"), seen=set())
     db.commit()
 
     assert db.query(Building).filter_by(short_code="DWINELLE-HALL").count() == 1
@@ -127,7 +109,7 @@ def test_persist_section_keeps_both_meetings_on_the_same_day_within_one_section(
     """A section with two meeting-details blocks landing on the same day
     (parse_section's docstring notes this is a rare but real case) must
     persist both blocks - keeping only one would make the other appear free."""
-    same_day_twice = _section(
+    same_day_twice = make_section(
         meetings=[
             ParsedMeeting(day_of_week=0, start_time=time(14, 0), end_time=time(15, 0)),
             ParsedMeeting(day_of_week=0, start_time=time(16, 0), end_time=time(17, 0)),
@@ -158,7 +140,7 @@ def test_persist_section_drops_one_of_two_same_day_blocks(db: Session, term: Ter
     persist_section(
         db,
         term.term_id,
-        _section(
+        make_section(
             meetings=[
                 ParsedMeeting(
                     day_of_week=0, start_time=time(14, 0), end_time=time(15, 0)
@@ -172,7 +154,7 @@ def test_persist_section_drops_one_of_two_same_day_blocks(db: Session, term: Ter
     )
     db.commit()
 
-    persist_section(db, term.term_id, _section(), set())
+    persist_section(db, term.term_id, make_section(), set())
     db.commit()
 
     meeting = db.query(Meeting).filter_by(source_record_id="1").one()
@@ -182,7 +164,7 @@ def test_persist_section_drops_one_of_two_same_day_blocks(db: Session, term: Ter
 def test_persist_section_removes_a_meeting_day_dropped_from_a_still_present_section(
     db: Session, term: Term
 ):
-    two_days = _section(
+    two_days = make_section(
         meetings=[
             ParsedMeeting(day_of_week=0, start_time=time(14, 0), end_time=time(15, 0)),
             ParsedMeeting(day_of_week=2, start_time=time(14, 0), end_time=time(15, 0)),
@@ -192,7 +174,7 @@ def test_persist_section_removes_a_meeting_day_dropped_from_a_still_present_sect
     db.commit()
     assert db.query(Meeting).filter_by(source_record_id="1").count() == 2
 
-    one_day = _section(
+    one_day = make_section(
         meetings=[
             ParsedMeeting(day_of_week=0, start_time=time(14, 0), end_time=time(15, 0))
         ]
@@ -206,8 +188,8 @@ def test_persist_section_removes_a_meeting_day_dropped_from_a_still_present_sect
 
 
 def test_run_import_retires_a_section_that_disappears(db: Session, term: Term):
-    persist_section(db, term.term_id, _section(source_record_id="1"), set())
-    persist_section(db, term.term_id, _section(source_record_id="2"), set())
+    persist_section(db, term.term_id, make_section(source_record_id="1"), set())
+    persist_section(db, term.term_id, make_section(source_record_id="2"), set())
     db.commit()
     assert db.query(Meeting).count() == 2
 
@@ -358,40 +340,16 @@ def test_run_import_records_zero_imported_on_a_failure_after_partial_success(
     assert db.query(Meeting).count() == 0
 
 
-def _listing_handler(*slugs: str):
-    """Serves a one-page taxonomy listing of `slugs`, backed by fixtures."""
-    page_0 = "".join(f'<a href="/content/{slug}">x</a>' for slug in slugs)
-
-    def handler(path: str, params: dict | None) -> FakeResponse:
-        if path.startswith("/taxonomy/term/"):
-            page = (params or {}).get("page", 0)
-            return FakeResponse(200, text=page_0 if page == 0 else "")
-        slug = path.removeprefix("/content/")
-        return FakeResponse(
-            200, text=(FIXTURES / f"{slug.replace('-', '_')}.html").read_text()
-        )
-
-    return handler
-
-
-def _persist_prior_sections(db: Session, term: Term, *source_record_ids: str) -> None:
-    for source_record_id in source_record_ids:
-        persist_section(
-            db, term.term_id, _section(source_record_id=source_record_id), set()
-        )
-    db.commit()
-
-
 def test_run_import_aborts_when_enumeration_returns_no_sections(
     db: Session, term: Term
 ):
     """An empty listing (site change, soft block) must not wipe the term."""
-    _persist_prior_sections(db, term, "a", "b")
+    persist_prior_sections(db, term, "a", "b")
 
     with pytest.raises(ImportAborted, match="no sections"):
         run_import(
             db,
-            FakeSession(_listing_handler()),
+            FakeSession(listing_handler()),
             term.term_id,
             rate_limit_seconds=0,
             max_retire_fraction=1.0,
@@ -405,12 +363,12 @@ def test_run_import_aborts_when_enumeration_returns_no_sections(
 def test_run_import_aborts_when_every_section_is_rejected(db: Session, term: Term):
     """E.g. a parser regression rejecting everything: sections are read,
     none are seen, and retiring the whole term would trip the guard."""
-    _persist_prior_sections(db, term, "a", "b")
+    persist_prior_sections(db, term, "a", "b")
 
     with pytest.raises(ImportAborted, match="retire 2 of the term's 2"):
         run_import(
             db,
-            FakeSession(_listing_handler("ind-no-meetings")),
+            FakeSession(listing_handler("ind-no-meetings")),
             term.term_id,
             rate_limit_seconds=0,
         )
@@ -422,11 +380,11 @@ def test_run_import_aborts_when_every_section_is_rejected(db: Session, term: Ter
 
 def test_run_import_retires_sections_up_to_the_threshold(db: Session, term: Term):
     # lec_with_room.html is source_record_id "482493"; "gone" is half the term.
-    _persist_prior_sections(db, term, "482493", "gone")
+    persist_prior_sections(db, term, "482493", "gone")
 
     result = run_import(
         db,
-        FakeSession(_listing_handler("lec-with-room")),
+        FakeSession(listing_handler("lec-with-room")),
         term.term_id,
         rate_limit_seconds=0,
     )
@@ -438,11 +396,11 @@ def test_run_import_retires_sections_up_to_the_threshold(db: Session, term: Term
 def test_run_import_allows_a_full_retirement_when_explicitly_permitted(
     db: Session, term: Term
 ):
-    _persist_prior_sections(db, term, "a", "b")
+    persist_prior_sections(db, term, "a", "b")
 
     result = run_import(
         db,
-        FakeSession(_listing_handler("ind-no-meetings")),
+        FakeSession(listing_handler("ind-no-meetings")),
         term.term_id,
         rate_limit_seconds=0,
         max_retire_fraction=1.0,
@@ -456,7 +414,7 @@ def test_run_import_rejects_an_invalid_max_retire_fraction(db: Session, term: Te
     with pytest.raises(ValueError, match="max_retire_fraction"):
         run_import(
             db,
-            FakeSession(_listing_handler()),
+            FakeSession(listing_handler()),
             term.term_id,
             rate_limit_seconds=0,
             max_retire_fraction=1.5,
@@ -472,13 +430,13 @@ def test_building_short_code_does_not_collide_on_a_shared_long_prefix(
     persist_section(
         db,
         term.term_id,
-        _section(building_name=f"{prefix} West", room_number="1"),
+        make_section(building_name=f"{prefix} West", room_number="1"),
         set(),
     )
     persist_section(
         db,
         term.term_id,
-        _section(building_name=f"{prefix} East", room_number="1"),
+        make_section(building_name=f"{prefix} East", room_number="1"),
         set(),
     )
     db.commit()
@@ -494,7 +452,7 @@ def test_run_import_skips_stale_retirement_when_a_section_fails(
 ):
     """A section that 404s this run must not cause an unrelated, still-real
     Meeting from a prior run to be deleted as "stale"."""
-    persist_section(db, term.term_id, _section(source_record_id="old"), set())
+    persist_section(db, term.term_id, make_section(source_record_id="old"), set())
     db.commit()
 
     def handler(path: str, params: dict | None) -> FakeResponse:
@@ -528,7 +486,7 @@ def test_run_import_applies_a_changed_section_even_when_another_section_fails(
     persist_section(
         db,
         term.term_id,
-        _section(
+        make_section(
             source_record_id="482493",
             meetings=[
                 ParsedMeeting(day_of_week=4, start_time=time(7, 0), end_time=time(8, 0))
@@ -569,7 +527,7 @@ def test_run_import_marks_failed_without_pending_rollback_error(
     """An IntegrityError mid-run must still leave the ImportRun FAILED, not
     stuck RUNNING or masked by a PendingRollbackError from committing a
     poisoned session."""
-    persist_section(db, term.term_id, _section(source_record_id="prior"), set())
+    persist_section(db, term.term_id, make_section(source_record_id="prior"), set())
     db.commit()
 
     def violate_check_constraint(db, term_id, section, *args):
@@ -630,7 +588,7 @@ def test_persist_section_caches_building_and_room_lookups_within_a_run(
         persist_section(
             db,
             term.term_id,
-            _section(source_record_id="1"),
+            make_section(source_record_id="1"),
             set(),
             building_cache,
             room_cache,
@@ -638,7 +596,7 @@ def test_persist_section_caches_building_and_room_lookups_within_a_run(
         persist_section(
             db,
             term.term_id,
-            _section(source_record_id="2"),
+            make_section(source_record_id="2"),
             set(),
             building_cache,
             room_cache,
@@ -651,3 +609,190 @@ def test_persist_section_caches_building_and_room_lookups_within_a_run(
     room_queries = [q for q in queries if "from room" in q]
     assert len(building_queries) == 1
     assert len(room_queries) == 1
+
+
+def test_run_import_rejects_an_overlong_parser_version(db: Session, term: Term):
+    session = FakeSession(listing_handler("lec-with-room"))
+
+    with pytest.raises(ValueError, match="parser_version"):
+        run_import(
+            db, session, term.term_id, rate_limit_seconds=0, parser_version="x" * 51
+        )
+
+    assert session.calls == []
+    assert db.query(ImportRun).count() == 0
+
+
+def _fail_flush_when(db: Session, predicate) -> None:
+    """Makes the next flush whose pending inserts match `predicate` raise."""
+
+    def before_flush(session, flush_context, instances):
+        if any(predicate(obj) for obj in session.new):
+            event.remove(db, "before_flush", before_flush)
+            raise RuntimeError("simulated database failure")
+
+    event.listen(db, "before_flush", before_flush)
+
+
+def test_run_import_records_a_failure_while_starting_the_run(db: Session, term: Term):
+    """A failure writing the RUNNING row - before any scraping - must still
+    be recorded, not escape with no ImportRun at all."""
+    _fail_flush_when(
+        db,
+        lambda obj: isinstance(obj, ImportRun) and obj.status == ImportStatus.RUNNING,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated") as exc_info:
+        run_import(
+            db,
+            FakeSession(listing_handler("lec-with-room")),
+            term.term_id,
+            rate_limit_seconds=0,
+        )
+
+    [failed] = db.query(ImportRun).all()
+    assert failed.status == ImportStatus.FAILED
+    assert exc_info.value.import_run_id == failed.import_id
+
+
+def test_run_import_records_an_interrupt_and_reraises_it(db: Session, term: Term):
+    def interrupting(path: str, params: dict | None) -> FakeResponse:
+        if path.startswith("/content/"):
+            raise KeyboardInterrupt
+        return listing_handler("lec-with-room")(path, params)
+
+    with pytest.raises(KeyboardInterrupt) as exc_info:
+        run_import(db, FakeSession(interrupting), term.term_id, rate_limit_seconds=0)
+
+    [failed] = db.query(ImportRun).all()
+    assert failed.status == ImportStatus.FAILED
+    assert failed.error_message == "KeyboardInterrupt"
+    assert exc_info.value.import_run_id == failed.import_id
+    assert db.query(Meeting).count() == 0
+
+
+def test_run_import_attaches_the_failed_run_id_to_the_exception(
+    db: Session, term: Term
+):
+    with pytest.raises(ImportAborted) as exc_info:
+        run_import(
+            db, FakeSession(listing_handler()), term.term_id, rate_limit_seconds=0
+        )
+
+    [failed] = db.query(ImportRun).all()
+    assert exc_info.value.import_run_id == failed.import_id
+
+
+def test_run_import_reraises_the_original_error_if_recording_it_fails(
+    db: Session, term: Term, caplog: pytest.LogCaptureFixture
+):
+    _fail_flush_when(
+        db,
+        lambda obj: isinstance(obj, ImportRun) and obj.status == ImportStatus.FAILED,
+    )
+
+    with pytest.raises(ImportAborted) as exc_info:
+        run_import(
+            db, FakeSession(listing_handler()), term.term_id, rate_limit_seconds=0
+        )
+
+    assert not hasattr(exc_info.value, "import_run_id")
+    assert "could not record the FAILED ImportRun" in caplog.text
+    assert db.query(ImportRun).count() == 0
+
+
+@pytest.mark.parametrize(
+    "source_url, expected",
+    [
+        ("https://classes.berkeley.edu/taxonomy/term/8573", 8573),
+        ("https://classes.berkeley.edu/taxonomy/term/8573/", 8573),
+        ("https://CLASSES.berkeley.edu/taxonomy/term/8573", 8573),
+    ],
+)
+def test_taxonomy_term_id_accepts_the_canonical_url(source_url: str, expected: int):
+    assert taxonomy_term_id(source_url) == expected
+
+
+@pytest.mark.parametrize(
+    "source_url",
+    [
+        None,
+        "",
+        "http://classes.berkeley.edu/taxonomy/term/8573",
+        "https://evil.example/taxonomy/term/8573",
+        "https://classes.berkeley.edu.evil.example/taxonomy/term/8573",
+        "https://classes.berkeley.edu:8443/taxonomy/term/8573",
+        "https://user@classes.berkeley.edu/taxonomy/term/8573",
+        "https://classes.berkeley.edu/foo?next=/taxonomy/term/5",
+        "https://classes.berkeley.edu/taxonomy/term/8573?page=2",
+        "https://classes.berkeley.edu/taxonomy/term/8573#top",
+        "https://classes.berkeley.edu/foo/taxonomy/term/8573",
+        "https://classes.berkeley.edu/taxonomy/term/8573/extra",
+        "https://classes.berkeley.edu/taxonomy/term/85x",
+        "https://classes.berkeley.edu/taxonomy/term/\u0668\u0665",
+        "https://[classes.berkeley.edu/taxonomy/term/8573",
+    ],
+)
+def test_taxonomy_term_id_rejects_anything_else(source_url: str | None):
+    with pytest.raises(ValueError, match="is not a https://classes.berkeley.edu"):
+        taxonomy_term_id(source_url)
+
+
+@pytest.mark.parametrize(
+    "source_url",
+    [
+        "https://classes.berkeley.edu/taxonomy/term/85\n73",
+        " https://classes.berkeley.edu/taxonomy/term/8573",
+        "https://classes.berkeley.edu/taxonomy/term/8573\t",
+        "\x01https://classes.berkeley.edu/taxonomy/term/8573",
+        "https://classes.berkeley.edu/taxonomy/te\x7frm/8573",
+        "https://classes.berkeley.edu/taxonomy/term/8573\u00a0",
+    ],
+)
+def test_taxonomy_term_id_rejects_hidden_characters(source_url: str):
+    """urlsplit strips or removes some of these, so they'd otherwise parse."""
+    with pytest.raises(ValueError, match="whitespace or control characters"):
+        taxonomy_term_id(source_url)
+
+
+def test_reimport_frees_the_room_of_a_section_that_disappeared(db: Session, term: Term):
+    """The stale pass deletes the vanished section's meetings, and the
+    availability recomputed in the same run must not still see them."""
+    run_import(
+        db,
+        FakeSession(listing_handler("lec-with-room", "dis-with-room")),
+        term.term_id,
+        rate_limit_seconds=0,
+    )
+    # lec_with_room.html: section 482493, Dwinelle 242, Fridays 14:00-17:00.
+    room = (
+        db.query(Room)
+        .join(Building)
+        .filter(Building.name == "Dwinelle", Room.room_number == "242")
+        .one()
+    )
+
+    def friday_free_intervals() -> list[tuple[time, time]]:
+        return [
+            (interval.start_time, interval.end_time)
+            for interval in db.query(AvailabilityInterval)
+            .filter_by(term_id=term.term_id, room_id=room.room_id, day_of_week=4)
+            .order_by(AvailabilityInterval.start_time)
+        ]
+
+    assert friday_free_intervals() == [
+        (time(7, 0), time(14, 0)),
+        (time(17, 0), time(22, 0)),
+    ]
+
+    # 482493 is gone from the listing; retiring 1 of 2 sections is allowed.
+    result = run_import(
+        db,
+        FakeSession(listing_handler("dis-with-room")),
+        term.term_id,
+        rate_limit_seconds=0,
+    )
+
+    assert result.status == ImportStatus.COMPLETED
+    assert db.query(Meeting).filter_by(source_record_id="482493").count() == 0
+    assert friday_free_intervals() == [(time(7, 0), time(22, 0))]
