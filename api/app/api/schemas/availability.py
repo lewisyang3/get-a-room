@@ -1,3 +1,5 @@
+from datetime import date as Date
+
 from pydantic import BaseModel
 
 
@@ -13,11 +15,13 @@ class AvailabilityResponse(BaseModel):
 
 
 class AvailabilityPage(BaseModel):
-    """One page of available rooms, with the weekday and time searched."""
+    """One page of available rooms, with the date, weekday, and time searched."""
 
     total: int
     limit: int
     offset: int
+    # The local date searched; None for a weekday-and-time search.
+    date: Date | None
     day_of_week: int
     time: str
     results: list[AvailabilityResponse]
