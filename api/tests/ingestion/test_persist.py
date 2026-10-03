@@ -244,6 +244,30 @@ def test_run_import_end_to_end(db: Session, term: Term):
     meeting = db.query(Meeting).filter_by(term_id=term.term_id).one()
     assert meeting.meeting_type == "LEC"
 
+    db.refresh(term)
+    assert term.fetched_at is not None
+    assert term.processed_at == result.completed_at
+    assert result.started_at <= term.fetched_at <= term.processed_at
+
+
+def test_failed_import_keeps_the_terms_last_processed_timestamps(
+    db: Session, term: Term
+):
+    """A failed run must not make stale data look freshly processed."""
+    run_import(db, FakeSession(_pipeline_handler), term.term_id, rate_limit_seconds=0)
+    db.refresh(term)
+    fetched_at, processed_at = term.fetched_at, term.processed_at
+
+    def forbidden(path: str, params: dict | None) -> FakeResponse:
+        return FakeResponse(403, text="Forbidden")
+
+    with pytest.raises(FetchError):
+        run_import(db, FakeSession(forbidden), term.term_id, rate_limit_seconds=0)
+
+    db.refresh(term)
+    assert term.fetched_at == fetched_at
+    assert term.processed_at == processed_at
+
 
 def test_run_import_scrapes_the_terms_taxonomy_id_not_its_db_id(
     db: Session, term: Term
@@ -358,6 +382,9 @@ def test_run_import_aborts_when_enumeration_returns_no_sections(
     import_run = db.query(ImportRun).filter_by(term_id=term.term_id).one()
     assert import_run.status == ImportStatus.FAILED
     assert {m.source_record_id for m in db.query(Meeting)} == {"a", "b"}
+    db.refresh(term)
+    assert term.fetched_at is None
+    assert term.processed_at is None
 
 
 def test_run_import_aborts_when_every_section_is_rejected(db: Session, term: Term):
