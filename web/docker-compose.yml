@@ -10,6 +10,8 @@ services:
       # The browser calls the API, so this is the API's address on the host,
       # not its address inside the Compose network.
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+      # The term to search. Set it in this directory's .env or the shell.
+      VITE_TERM_ID: ${VITE_TERM_ID:-}
     ports:
       - '3000:3000'
     volumes:

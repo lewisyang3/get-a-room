@@ -1,3 +1,4 @@
+import AvailabilitySearch from '../search/AvailabilitySearch'
 import styles from './LandingPage.module.css'
 
 function LandingPage() {
@@ -15,6 +16,8 @@ function LandingPage() {
             how long they stay free.
           </p>
         </div>
+
+        <AvailabilitySearch />
 
         <p className={styles.note}>
           Based on the <a href="https://classes.berkeley.edu">class schedule</a>

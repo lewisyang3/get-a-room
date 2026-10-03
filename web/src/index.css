@@ -7,6 +7,7 @@
   --surface: #f5f5f7;
   --border: #d2d2d7;
   --accent: #0b5cad;
+  --on-accent: #ffffff;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -30,6 +31,7 @@
     --surface: #1c1c1f;
     --border: #38383d;
     --accent: #6cb4ff;
+    --on-accent: #111113;
   }
 }
 
