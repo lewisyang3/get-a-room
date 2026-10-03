@@ -1,0 +1,118 @@
+/* Single readable column. The gutter never drops below 1rem and clears the
+   notch and home indicator on phones. */
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding-left: max(var(--space-4), env(safe-area-inset-left));
+  padding-right: max(var(--space-4), env(safe-area-inset-right));
+}
+
+.header {
+  padding-top: max(var(--space-6), env(safe-area-inset-top));
+}
+
+.wordmark {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  flex: 1;
+  padding-block: var(--space-12) var(--space-16);
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.lede {
+  font-size: 1.25rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.sectionTitle {
+  margin-bottom: var(--space-6);
+}
+
+.grid,
+.stack {
+  padding: 0;
+  list-style: none;
+}
+
+/* Stacked on a phone, three columns when there's room. Explicit rather than
+   auto-fit, which leaves the third item stranded on a row of its own at
+   in-between widths. */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-6);
+}
+
+@media (min-width: 36rem) {
+  .grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.point {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.secondary {
+  color: var(--text-secondary);
+}
+
+/* A solid surface, not a translucent one: this is content, not floating
+   chrome, and it has to stay legible. */
+.callout {
+  padding: var(--space-6);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.callout .sectionTitle {
+  margin-bottom: var(--space-2);
+}
+
+.calloutIntro {
+  margin-bottom: var(--space-6);
+  color: var(--text-secondary);
+}
+
+@media (min-width: 40rem) {
+  .callout {
+    padding: var(--space-8);
+  }
+}
+
+.footer {
+  padding-top: var(--space-6);
+  padding-bottom: max(var(--space-8), env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  font-size: 0.9375rem;
+}
+
+.footer a {
+  color: var(--accent);
+  text-underline-offset: 0.15em;
+}
