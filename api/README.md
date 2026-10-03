@@ -201,6 +201,28 @@ parameter at fault:
 `/docs` is the full reference: every parameter, response field, example, and
 error.
 
+## Listing buildings
+
+`GET /buildings` returns every building `/availability` searches: buildings
+inside the coverage area with at least one room in use. It takes no parameters
+and isn't paged.
+
+```bash
+curl 'http://localhost:8000/buildings'
+```
+
+```json
+{"results": [{"building_id": 2, "building_code": "DWINELLE",
+              "building_name": "Dwinelle",
+              "latitude": 37.8705, "longitude": -122.2606}]}
+```
+
+- Buildings are sorted by name. `latitude` and `longitude` are `null` when
+  unknown.
+- The fields match `/availability`'s, so a building's `building_id` or
+  `building_code` works as the `/availability` filter of the same name.
+- A listed building can still have no free room at a given time.
+
 ## Running tests and lint locally
 
 ```bash
