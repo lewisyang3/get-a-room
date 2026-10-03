@@ -1,8 +1,9 @@
 from datetime import date, datetime, time, timedelta, timezone
-from typing import NamedTuple
+from typing import Any, NamedTuple, NoReturn
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -31,14 +32,29 @@ def _minutes_since_midnight(value: time) -> float:
     )
 
 
+# Rejects a query parameter with the same 422 body FastAPI's own
+# validation uses, so every 422 names the parameter at fault in `loc`.
+def _invalid(param: str, message: str, value: Any) -> NoReturn:
+    raise RequestValidationError(
+        [
+            {
+                "type": "value_error",
+                "loc": ("query", param),
+                "msg": message,
+                "input": value,
+            }
+        ]
+    )
+
+
 # Trims a text filter, rejecting one that is only whitespace.
 def _clean_text_filter(name: str, value: str | None) -> str | None:
     if value is None:
         return None
-    value = value.strip()
-    if not value:
-        raise HTTPException(status_code=422, detail=f"{name} must not be blank")
-    return value
+    stripped = value.strip()
+    if not stripped:
+        _invalid(name, f"{name} must not be blank", value)
+    return stripped
 
 
 # The moment a search looks at, in the term's timezone.
@@ -183,22 +199,19 @@ def get_available_rooms(
     """
     # Allows only one way of saying when to search.
     if at is not None and (day_of_week is not None or requested_time is not None):
-        raise HTTPException(
-            status_code=422,
-            detail="at can't be combined with day_of_week or time",
-        )
-    # Requires the weekday and time together, or neither.
-    if (day_of_week is None) != (requested_time is None):
-        raise HTTPException(
-            status_code=422,
-            detail="day_of_week and time must be given together, or both omitted",
-        )
+        _invalid("at", "at can't be combined with day_of_week or time", at)
+    # Requires the weekday and time together, or neither; blames the one
+    # that's missing.
+    if day_of_week is not None and requested_time is None:
+        _invalid("time", "time is required with day_of_week", None)
+    if requested_time is not None and day_of_week is None:
+        _invalid("day_of_week", "day_of_week is required with time", None)
     # Rejects times with a UTC offset; times are local to the term.
     if requested_time is not None and requested_time.tzinfo is not None:
-        raise HTTPException(
-            status_code=422,
-            detail="time must be a local time in the term's timezone, "
-            "without a UTC offset",
+        _invalid(
+            "time",
+            "time must be a local time in the term's timezone, without a UTC offset",
+            requested_time,
         )
 
     # Trims the text filters, rejecting ones that are only whitespace.
