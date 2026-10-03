@@ -189,6 +189,18 @@ Responses are one page of results:
 - Results are sorted by building name, then room number. `limit` (default
   50, at most 200) and `offset` select a page; `total` counts every match.
 
+Errors are `{"detail": ...}`. An unknown term is a 404 with a message. Any
+invalid request is a 422 with a list of problems, each with a `loc` naming the
+parameter at fault:
+
+```json
+{"detail": [{"type": "value_error", "loc": ["query", "time"],
+             "msg": "time is required with day_of_week", "input": null}]}
+```
+
+`/docs` is the full reference: every parameter, response field, example, and
+error.
+
 ## Running tests and lint locally
 
 ```bash
