@@ -7,13 +7,19 @@ import {
   type SearchWhen,
 } from '../api/availability'
 
+/** What to search for: when, and how long a room must stay free. */
+export type SearchQuery = {
+  when: SearchWhen
+  minimumMinutes: number
+}
+
 export type AvailabilityState = {
   status: 'idle' | 'loading' | 'success' | 'error'
   /** The latest search requested, which is loading, shown or failed. */
-  when: SearchWhen | null
+  query: SearchQuery | null
   /** The search that produced `page` and `results`. While a new search
    * loads, it still describes the results on screen. */
-  resultsWhen: SearchWhen | null
+  resultsQuery: SearchQuery | null
   /** The latest page, for the total and the moment the API searched. */
   page: AvailabilityPage | null
   /** Every room loaded so far, across pages. */
@@ -25,8 +31,8 @@ export type AvailabilityState = {
 
 const INITIAL_STATE: AvailabilityState = {
   status: 'idle',
-  when: null,
-  resultsWhen: null,
+  query: null,
+  resultsQuery: null,
   page: null,
   results: [],
   error: null,
@@ -80,26 +86,26 @@ export function useAvailability(termId: number) {
   useEffect(() => () => controllerRef.current?.abort(), [])
 
   const search = useCallback(
-    async (when: SearchWhen) => {
+    async (query: SearchQuery) => {
       const signal = restart()
       // Earlier results stay until the new ones arrive, so the layout doesn't
       // jump while loading.
       setState((previous) => ({
         ...previous,
         status: 'loading',
-        when,
+        query,
         error: null,
         loadingMore: false,
         loadMoreError: null,
       }))
       try {
-        const page = await fetchAvailability({ termId, when, signal })
+        const page = await fetchAvailability({ termId, ...query, signal })
         if (signal.aborted) return
         setState({
           ...INITIAL_STATE,
           status: 'success',
-          when,
-          resultsWhen: when,
+          query,
+          resultsQuery: query,
           page,
           results: page.results,
         })
@@ -109,7 +115,7 @@ export function useAvailability(termId: number) {
         setState({
           ...INITIAL_STATE,
           status: 'error',
-          when,
+          query,
           error: toApiError(error),
         })
       }
@@ -120,7 +126,7 @@ export function useAvailability(termId: number) {
   const loadMore = useCallback(async () => {
     if (
       state.status !== 'success' ||
-      !state.resultsWhen ||
+      !state.resultsQuery ||
       !state.page ||
       state.results.length >= state.page.total
     ) {
@@ -129,7 +135,8 @@ export function useAvailability(termId: number) {
     // "now" is worked out from the API's clock on every request, so asking
     // for it again could page through a different minute's rooms. Later pages
     // ask for the exact moment the first page was computed for.
-    const when = pinnedSearch(state.resultsWhen, state.page)
+    const { minimumMinutes } = state.resultsQuery
+    const when = pinnedSearch(state.resultsQuery.when, state.page)
     const offset = state.results.length
     const signal = restart()
     setState((previous) => ({
@@ -138,7 +145,13 @@ export function useAvailability(termId: number) {
       loadMoreError: null,
     }))
     try {
-      const page = await fetchAvailability({ termId, when, offset, signal })
+      const page = await fetchAvailability({
+        termId,
+        when,
+        minimumMinutes,
+        offset,
+        signal,
+      })
       if (signal.aborted) return
       setState((previous) => ({
         ...previous,
@@ -158,8 +171,8 @@ export function useAvailability(termId: number) {
   }, [state, termId, restart])
 
   const retry = useCallback(() => {
-    if (state.when) void search(state.when)
-  }, [state.when, search])
+    if (state.query) void search(state.query)
+  }, [state.query, search])
 
   return { ...state, search, loadMore, retry }
 }

@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AvailabilityPage, AvailabilityResult } from '../api/availability'
-import { useAvailability } from './useAvailability'
+import { useAvailability, type SearchQuery } from './useAvailability'
 
 function room(id: number): AvailabilityResult {
   return {
@@ -26,6 +26,12 @@ function page(ids: number[], total = ids.length, offset = 0): AvailabilityPage {
     time: '14:30',
     results: ids.map(room),
   }
+}
+
+const NOW: SearchQuery = { when: { kind: 'now' }, minimumMinutes: 60 }
+
+function at(value: string, minimumMinutes = 60): SearchQuery {
+  return { when: { kind: 'at', at: value }, minimumMinutes }
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -62,7 +68,7 @@ describe('useAvailability', () => {
     const { result } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
     expect(result.current.status).toBe('loading')
 
@@ -78,16 +84,16 @@ describe('useAvailability', () => {
     const { result } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
     act(() => {
-      void result.current.search({ kind: 'at', at: '2026-10-05T15:00' })
+      void result.current.search(at('2026-10-05T15:00'))
     })
 
     expect(pending[0].signal?.aborted).toBe(true)
     await act(async () => pending[1].resolve(jsonResponse(page([9]))))
 
-    expect(result.current.when).toEqual({ kind: 'at', at: '2026-10-05T15:00' })
+    expect(result.current.query).toEqual(at('2026-10-05T15:00'))
     expect(result.current.results.map((r) => r.room_id)).toEqual([9])
   })
 
@@ -96,11 +102,11 @@ describe('useAvailability', () => {
     const { result } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
     await act(async () => pending[0].resolve(jsonResponse(page([1]))))
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
 
     expect(result.current.status).toBe('loading')
@@ -112,11 +118,11 @@ describe('useAvailability', () => {
     const { result } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
     await act(async () => pending[0].resolve(jsonResponse(page([1]))))
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
     await act(async () =>
       pending[1].resolve(jsonResponse({ detail: 'x' }, 404)),
@@ -132,7 +138,7 @@ describe('useAvailability', () => {
     const { result } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search({ kind: 'at', at: '2026-10-05T14:30' })
+      void result.current.search(at('2026-10-05T14:30'))
     })
     await act(async () => pending[0].resolve(jsonResponse({}, 500)))
     act(() => result.current.retry())
@@ -148,7 +154,7 @@ describe('useAvailability', () => {
     const { result } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
     await act(async () => pending[0].resolve(jsonResponse(page([1, 2], 3))))
     act(() => {
@@ -168,7 +174,7 @@ describe('useAvailability', () => {
     const { result } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
     await act(async () =>
       pending[0].resolve(
@@ -183,7 +189,35 @@ describe('useAvailability', () => {
     expect(url.searchParams.get('at')).toBe('2026-10-05T13:59')
     expect(url.searchParams.get('offset')).toBe('2')
     // The results are still described as a now search.
-    expect(result.current.when).toEqual({ kind: 'now' })
+    expect(result.current.query).toEqual(NOW)
+  })
+
+  it('keeps the minimum duration when loading more and retrying', async () => {
+    const { pending } = controlledFetch()
+    const { result } = renderHook(() => useAvailability(3))
+    const query: SearchQuery = { when: { kind: 'now' }, minimumMinutes: 120 }
+
+    act(() => {
+      void result.current.search(query)
+    })
+    await act(async () => pending[0].resolve(jsonResponse(page([1], 3))))
+    act(() => {
+      void result.current.loadMore()
+    })
+    const more = new URL(pending[1].url)
+    expect(more.searchParams.get('minimum_minutes')).toBe('120')
+    expect(more.searchParams.get('at')).toBe('2026-10-05T14:30')
+
+    await act(async () => pending[1].resolve(jsonResponse({}, 500)))
+    act(() => {
+      void result.current.search(query)
+    })
+    await act(async () => pending[2].resolve(jsonResponse({}, 503)))
+    act(() => result.current.retry())
+
+    expect(new URL(pending[3].url).searchParams.get('minimum_minutes')).toBe(
+      '120',
+    )
   })
 
   it('skips rooms already listed when appending a page', async () => {
@@ -191,7 +225,7 @@ describe('useAvailability', () => {
     const { result } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
     await act(async () => pending[0].resolve(jsonResponse(page([1, 2], 4))))
     act(() => {
@@ -207,7 +241,7 @@ describe('useAvailability', () => {
     const { result } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
     await act(async () => pending[0].resolve(jsonResponse(page([1], 2))))
     act(() => {
@@ -225,7 +259,7 @@ describe('useAvailability', () => {
     const { result } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
     await act(async () => pending[0].resolve(jsonResponse(page([1]))))
     act(() => {
@@ -240,7 +274,7 @@ describe('useAvailability', () => {
     const { result, unmount } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search({ kind: 'now' })
+      void result.current.search(NOW)
     })
     unmount()
 

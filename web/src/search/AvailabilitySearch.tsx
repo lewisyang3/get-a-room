@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { DEFAULT_MINIMUM_MINUTES } from '../api/availability'
 import { termId as configuredTermId } from '../config'
 import ResultsList from './ResultsList'
 import SearchForm from './SearchForm'
@@ -11,12 +12,19 @@ function Search({ termId }: { termId: number }) {
 
   // Most visits ask "what's free now?", so answer it without a tap.
   useEffect(() => {
-    void search({ kind: 'now' })
+    void search({
+      when: { kind: 'now' },
+      minimumMinutes: DEFAULT_MINIMUM_MINUTES,
+    })
   }, [search])
 
   return (
     <section className={styles.search} aria-label="Find a room">
-      <SearchForm onSearch={(when) => void search(when)} />
+      <SearchForm
+        onSearch={(when) =>
+          void search({ when, minimumMinutes: DEFAULT_MINIMUM_MINUTES })
+        }
+      />
       <ResultsList
         {...availability}
         onRetry={availability.retry}

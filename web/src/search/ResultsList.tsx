@@ -74,7 +74,7 @@ function Summary({ when, page }: { when: SearchWhen; page: AvailabilityPage }) {
 
 function ResultsList({
   status,
-  resultsWhen,
+  resultsQuery,
   page,
   results,
   error,
@@ -100,7 +100,7 @@ function ResultsList({
     )
   }
 
-  if (!page || !resultsWhen) {
+  if (!page || !resultsQuery) {
     return (
       <p className={styles.message} role="status">
         Finding rooms…
@@ -117,7 +117,7 @@ function ResultsList({
       aria-busy={loading}
     >
       <div className={styles.summary} aria-live="polite">
-        <Summary when={resultsWhen} page={page} />
+        <Summary when={resultsQuery.when} page={page} />
       </div>
       {results.length > 0 && (
         <ul className={styles.list}>

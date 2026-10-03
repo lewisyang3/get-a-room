@@ -45,9 +45,17 @@ export class ApiError extends Error {
 
 export const PAGE_SIZE = 50
 
+/** The API's default minimum free time, in minutes. */
+export const DEFAULT_MINIMUM_MINUTES = 60
+
+/** The minimum free times a student can choose, in minutes. */
+export const MINIMUM_MINUTES_OPTIONS = [30, 60, 120, 180] as const
+
 export type AvailabilityRequest = {
   termId: number
   when: SearchWhen
+  /** Only rooms free for at least this many minutes. */
+  minimumMinutes: number
   offset?: number
   limit?: number
   signal?: AbortSignal
@@ -57,6 +65,7 @@ export type AvailabilityRequest = {
 export function availabilityUrl({
   termId,
   when,
+  minimumMinutes,
   offset = 0,
   limit = PAGE_SIZE,
   baseUrl = apiBaseUrl,
@@ -64,6 +73,7 @@ export function availabilityUrl({
   const params = new URLSearchParams({ term_id: String(termId) })
   // With no time parameters the API searches right now, on its own clock.
   if (when.kind === 'at') params.set('at', when.at)
+  params.set('minimum_minutes', String(minimumMinutes))
   params.set('limit', String(limit))
   params.set('offset', String(offset))
   return `${baseUrl}/availability?${params}`

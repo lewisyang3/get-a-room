@@ -60,6 +60,7 @@ describe('availabilityUrl', () => {
       availabilityUrl({
         termId: 3,
         when: { kind: 'now' },
+        minimumMinutes: 60,
         baseUrl: 'http://api.test',
       }),
     )
@@ -67,28 +68,35 @@ describe('availabilityUrl', () => {
     expect(url.origin + url.pathname).toBe('http://api.test/availability')
     expect(Object.fromEntries(url.searchParams)).toEqual({
       term_id: '3',
+      minimum_minutes: '60',
       limit: '50',
       offset: '0',
     })
   })
 
-  it('passes a later time as at, with paging', () => {
+  it('passes a later time as at, with the minimum and paging', () => {
     const url = new URL(
       availabilityUrl({
         termId: 3,
         when: { kind: 'at', at: '2026-10-05T14:30' },
+        minimumMinutes: 120,
         offset: 50,
         baseUrl: 'http://api.test',
       }),
     )
 
     expect(url.searchParams.get('at')).toBe('2026-10-05T14:30')
+    expect(url.searchParams.get('minimum_minutes')).toBe('120')
     expect(url.searchParams.get('offset')).toBe('50')
   })
 })
 
 describe('fetchAvailability', () => {
-  const request = { termId: 3, when: { kind: 'now' } as const }
+  const request = {
+    termId: 3,
+    when: { kind: 'now' } as const,
+    minimumMinutes: 60,
+  }
 
   it('returns the page', async () => {
     stubFetch(async () => jsonResponse(PAGE))
