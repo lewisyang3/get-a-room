@@ -72,9 +72,14 @@ app from another origin, add it to the API's `ALLOWED_ORIGINS`.
 
 ## Configuration
 
-| Variable            | Default                 | Description                                     |
-| ------------------- | ----------------------- | ----------------------------------------------- |
-| `VITE_API_BASE_URL` | `http://localhost:8000` | Base URL of the API (no trailing slash needed). |
+| Variable            | Default                 | Description                                                              |
+| ------------------- | ----------------------- | ------------------------------------------------------------------------ |
+| `VITE_API_BASE_URL` | `http://localhost:8000` | Base URL of the API (no trailing slash needed).                          |
+| `VITE_TERM_ID`      | none                    | The term to search, as its `term_id`. Search is disabled until it's set. |
+
+Find a term's id with `python -m ingestion.cli term list` in `get-a-room-api`,
+or `docker compose exec api python -m ingestion.cli term list` in the Compose
+stack.
 
 Vite reads `VITE_` variables when it starts the dev server or builds, so restart
 or rebuild after changing one. For local overrides, copy `.env.example` to
