@@ -18,7 +18,7 @@ import signal
 import sys
 import time
 from collections.abc import Callable, Iterator, Sequence
-from datetime import date
+from datetime import date, datetime, timezone
 from zoneinfo import available_timezones
 
 from sqlalchemy import select
@@ -241,19 +241,27 @@ def _term_create(args: argparse.Namespace, db: Session) -> int:
     return EXIT_OK
 
 
+def _format_processed_at(processed_at: datetime | None) -> str:
+    """When the term's last completed import finished, in UTC, or "never"."""
+    if processed_at is None:
+        return "never"
+    return processed_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+
+
 def _term_list(args: argparse.Namespace, db: Session) -> int:
     terms = db.scalars(select(Term).order_by(Term.start_date, Term.term_id)).all()
     if not terms:
         print("No terms.")
         return EXIT_OK
 
-    rows = [("ID", "NAME", "START", "END", "STATUS", "SOURCE URL")] + [
+    rows = [("ID", "NAME", "START", "END", "STATUS", "PROCESSED", "SOURCE URL")] + [
         (
             str(term.term_id),
             term.name,
             str(term.start_date),
             str(term.end_date),
             term.status.value,
+            _format_processed_at(term.processed_at),
             term.source_url or "",
         )
         for term in terms
