@@ -329,6 +329,28 @@ def test_the_building_filter_limits_results(
     assert _room_keys(response) == [("Etcheverry", "3106")]
 
 
+def test_rooms_not_in_use_are_never_returned(
+    client: TestClient, db: Session, term: Term, rooms: dict[str, Room]
+):
+    rooms["dwinelle_109"].in_use = False
+    db.commit()
+
+    response = _get(client, term, day_of_week=FRIDAY, time="10:00", minimum_minutes=1)
+
+    assert _room_keys(response) == [("Dwinelle", "242"), ("Etcheverry", "3106")]
+
+
+def test_buildings_outside_coverage_are_never_returned(
+    client: TestClient, db: Session, term: Term, rooms: dict[str, Room]
+):
+    rooms["etcheverry_3106"].building.included_in_coverage = False
+    db.commit()
+
+    response = _get(client, term, day_of_week=FRIDAY, time="10:00", minimum_minutes=1)
+
+    assert _room_keys(response) == [("Dwinelle", "109"), ("Dwinelle", "242")]
+
+
 def test_a_term_with_no_availability_returns_no_rooms(client: TestClient, term: Term):
     assert _room_keys(_get(client, term, day_of_week=FRIDAY, time="10:00")) == []
 

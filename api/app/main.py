@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes.availability import router as availability_router
+from app.api.routes.buildings import router as buildings_router
 from app.api.schemas.health import HealthResponse
 
 from app.config import get_settings
@@ -29,6 +30,10 @@ app = FastAPI(
     description=DESCRIPTION,
     openapi_tags=[
         {"name": "availability", "description": "Search for available rooms."},
+        {
+            "name": "buildings",
+            "description": "List the buildings that availability searches.",
+        },
         {"name": "operations", "description": "Service health."},
     ],
 )
@@ -42,6 +47,7 @@ app.add_middleware(
 )
 
 app.include_router(availability_router)
+app.include_router(buildings_router)
 
 
 @app.get(
