@@ -9,8 +9,11 @@ import {
 
 export type AvailabilityState = {
   status: 'idle' | 'loading' | 'success' | 'error'
-  /** The search being shown or loaded. */
+  /** The latest search requested, which is loading, shown or failed. */
   when: SearchWhen | null
+  /** The search that produced `page` and `results`. While a new search
+   * loads, it still describes the results on screen. */
+  resultsWhen: SearchWhen | null
   /** The latest page, for the total and the moment the API searched. */
   page: AvailabilityPage | null
   /** Every room loaded so far, across pages. */
@@ -23,6 +26,7 @@ export type AvailabilityState = {
 const INITIAL_STATE: AvailabilityState = {
   status: 'idle',
   when: null,
+  resultsWhen: null,
   page: null,
   results: [],
   error: null,
@@ -95,6 +99,7 @@ export function useAvailability(termId: number) {
           ...INITIAL_STATE,
           status: 'success',
           when,
+          resultsWhen: when,
           page,
           results: page.results,
         })
@@ -115,7 +120,7 @@ export function useAvailability(termId: number) {
   const loadMore = useCallback(async () => {
     if (
       state.status !== 'success' ||
-      !state.when ||
+      !state.resultsWhen ||
       !state.page ||
       state.results.length >= state.page.total
     ) {
@@ -124,7 +129,7 @@ export function useAvailability(termId: number) {
     // "now" is worked out from the API's clock on every request, so asking
     // for it again could page through a different minute's rooms. Later pages
     // ask for the exact moment the first page was computed for.
-    const when = pinnedSearch(state.when, state.page)
+    const when = pinnedSearch(state.resultsWhen, state.page)
     const offset = state.results.length
     const signal = restart()
     setState((previous) => ({

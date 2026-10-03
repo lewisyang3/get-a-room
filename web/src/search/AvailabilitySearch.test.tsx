@@ -147,6 +147,36 @@ describe('AvailabilitySearch', () => {
     )
   })
 
+  it('keeps describing the shown results while a new search loads', async () => {
+    const user = userEvent.setup()
+    let respond: (response: Response) => void = () => {}
+    stubResponses(
+      () => jsonResponse(page([room(1)])),
+      () => new Promise<Response>((resolve) => (respond = resolve)),
+    )
+    render(<AvailabilitySearch termId={3} />)
+    await screen.findByRole('heading', { name: '1 room free now' })
+
+    await user.click(screen.getByRole('radio', { name: 'Later' }))
+    await user.click(screen.getByRole('button', { name: 'Find rooms' }))
+
+    // The dimmed results are still the "now" results, so the heading says so.
+    expect(
+      screen.getByRole('heading', { name: '1 room free now' }),
+    ).toBeInTheDocument()
+
+    respond(
+      jsonResponse(
+        page([room(1), room(2)], { date: '2026-10-06', time: '09:00' }),
+      ),
+    )
+    expect(
+      await screen.findByRole('heading', {
+        name: `2 rooms free at Tue, Oct 6, ${nbsp('9:00 AM')}`,
+      }),
+    ).toBeInTheDocument()
+  })
+
   it('explains an empty result', async () => {
     stubResponses(() => jsonResponse(page([])))
     render(<AvailabilitySearch termId={3} />)
