@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.schemas.availability import AvailabilityPage, AvailabilityResponse
+from app.api.schemas.errors import ErrorResponse, ValidationErrorResponse
 from app.db import get_db
 from app.models.models import AvailabilityInterval, Building, Room, Term
 
@@ -112,7 +113,17 @@ def _resolve_search(
 @router.get(
     "",
     response_model=AvailabilityPage,
-    responses={404: {"description": "The term does not exist."}},
+    summary="Find available rooms",
+    responses={
+        404: {"model": ErrorResponse, "description": "The term does not exist."},
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "A parameter is invalid: a malformed or out-of-range "
+            "value, `at` combined with `day_of_week` or `time`, `day_of_week` "
+            "or `time` given without the other, a `time` with a UTC offset, or "
+            "a blank text filter. `loc` names the parameter at fault.",
+        },
+    },
 )
 def get_available_rooms(
     # Identifies the academic term being searched.
@@ -193,9 +204,11 @@ def get_available_rooms(
 
     Searches at a date and time (`at`), at a weekday and time every week
     (`day_of_week` + `time`), or, with none of these, right now in the
-    term's own timezone. A date outside the term's dates returns no rooms. Availability only covers 07:00-22:00, so searches outside that
-    window return no rooms. All filters apply together; results are sorted
-    by building name, then room number.
+    term's own timezone. Every search is to the minute, and a date outside
+    the term's dates returns no rooms. Availability only covers
+    07:00-22:00, so searches outside that window return no rooms. All
+    filters apply together; results are sorted by building name, then room
+    number.
     """
     # Allows only one way of saying when to search.
     if at is not None and (day_of_week is not None or requested_time is not None):
