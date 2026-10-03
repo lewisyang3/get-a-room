@@ -2,7 +2,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.schemas.availability import AvailabilityResponse
@@ -28,6 +28,16 @@ def _minutes_since_midnight(value: time) -> float:
         + value.minute
         + (value.second + value.microsecond / 1_000_000) / 60
     )
+
+
+# Trims a text filter, rejecting one that is only whitespace.
+def _clean_text_filter(name: str, value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        raise HTTPException(status_code=422, detail=f"{name} must not be blank")
+    return value
 
 
 # Returns rooms that are available at a requested time, or right now.
@@ -70,6 +80,27 @@ def get_available_rooms(
     building_id: int | None = Query(
         None, description="Only return rooms in this building."
     ),
+    # Optionally limits results to one building code, ignoring case.
+    building_code: str | None = Query(
+        None,
+        min_length=1,
+        description="Only return rooms in the building with this exact code, "
+        "ignoring case, e.g. `dwinelle`.",
+    ),
+    # Optionally limits results to buildings whose name contains this text.
+    building: str | None = Query(
+        None,
+        min_length=1,
+        description="Only return rooms in buildings whose name contains this "
+        "text, ignoring case, e.g. `dwin`.",
+    ),
+    # Optionally limits results to one room number, ignoring case.
+    room: str | None = Query(
+        None,
+        min_length=1,
+        description="Only return rooms with exactly this room number, ignoring "
+        "case, e.g. `242`.",
+    ),
     # Gets a database session from FastAPI.
     db: Session = Depends(get_db),
     # Gets the current time from FastAPI.
@@ -95,6 +126,11 @@ def get_available_rooms(
             detail="time must be a local time in the term's timezone, "
             "without a UTC offset",
         )
+
+    # Trims the text filters, rejecting ones that are only whitespace.
+    building_code = _clean_text_filter("building_code", building_code)
+    building = _clean_text_filter("building", building)
+    room = _clean_text_filter("room", room)
 
     # Looks up the term so a missing one isn't mistaken for "no rooms free".
     term = db.get(Term, term_id)
@@ -138,6 +174,16 @@ def get_available_rooms(
     # Adds the building filter only when one was provided.
     if building_id is not None:
         statement = statement.where(Building.building_id == building_id)
+    # Adds the remaining filters the same way; they all apply together.
+    if building_code is not None:
+        statement = statement.where(
+            func.lower(Building.short_code) == building_code.lower()
+        )
+    if building is not None:
+        # autoescape matches % and _ literally instead of as wildcards.
+        statement = statement.where(Building.name.icontains(building, autoescape=True))
+    if room is not None:
+        statement = statement.where(func.lower(Room.room_number) == room.lower())
 
     # Sorts by building name and room number, then id as a tiebreak.
     statement = statement.order_by(Building.name, Room.room_number, Room.room_id)
