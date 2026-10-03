@@ -109,7 +109,11 @@ def test_now_returns_rooms_free_in_the_terms_timezone(
     room = rooms["dwinelle_109"]
     body = response.json()
     assert (body["total"], body["limit"], body["offset"]) == (2, 50, 0)
-    assert (body["day_of_week"], body["time"]) == (FRIDAY, "10:00")
+    assert (body["date"], body["day_of_week"], body["time"]) == (
+        "2025-09-05",
+        FRIDAY,
+        "10:00",
+    )
     assert body["results"] == [
         {
             "room_id": room.room_id,
@@ -523,3 +527,150 @@ def test_now_outside_the_term_still_reports_the_moment_searched(
 )
 def test_invalid_search_or_paging_is_rejected(client: TestClient, term: Term, params):
     assert _search(client, term, **params).status_code == 422
+
+
+# --- a selected date and time (GAR-030) ---
+
+
+def _at(client: TestClient, term: Term, at: str, **params):
+    return _get(client, term, at=at, **params)
+
+
+def test_at_a_local_date_and_time_matches_that_weekday_and_time(
+    client: TestClient, term: Term, rooms: dict[str, Room]
+):
+    response = _at(client, term, "2025-09-05T10:00")
+
+    body = response.json()
+    assert (body["date"], body["day_of_week"], body["time"]) == (
+        "2025-09-05",
+        FRIDAY,
+        "10:00",
+    )
+    weekly = _get(client, term, day_of_week=FRIDAY, time="10:00").json()
+    assert body["results"] == weekly["results"]
+    assert _room_keys(response) == [("Dwinelle", "109"), ("Dwinelle", "242")]
+
+
+@pytest.mark.parametrize(
+    "at",
+    [
+        "2025-09-05T17:00Z",
+        "2025-09-05T17:00:00+00:00",
+        # Already Saturday in Tokyo, but Friday 10:00 in Berkeley.
+        "2025-09-06T02:00+09:00",
+    ],
+)
+def test_at_with_a_utc_offset_is_converted_to_the_terms_timezone(
+    client: TestClient, term: Term, rooms: dict[str, Room], at: str
+):
+    body = _at(client, term, at).json()
+
+    assert (body["date"], body["day_of_week"], body["time"]) == (
+        "2025-09-05",
+        FRIDAY,
+        "10:00",
+    )
+    assert body["total"] == 2
+
+
+@pytest.mark.parametrize("at", ["2025-11-07T10:00", "2025-11-07T18:00Z"])
+def test_at_after_the_dst_change_searches_local_clock_time(
+    client: TestClient, term: Term, rooms: dict[str, Room], at: str
+):
+    """After 2025-11-02 Berkeley is UTC-8, so 10:00 local is 18:00Z."""
+    response = _at(client, term, at)
+
+    assert response.json()["time"] == "10:00"
+    assert _room_keys(response) == [("Dwinelle", "109"), ("Dwinelle", "242")]
+
+
+def test_at_uses_the_local_date_for_the_terms_last_day(
+    client: TestClient, term: Term, rooms: dict[str, Room]
+):
+    """05:00Z on Dec 13 is still Friday Dec 12, 21:00, the term's last day."""
+    response = _at(client, term, "2025-12-13T05:00Z")
+
+    assert response.json()["date"] == "2025-12-12"
+    assert _room_keys(response) == [("Dwinelle", "242")]
+
+
+@pytest.mark.parametrize(
+    "at, expected_date",
+    [
+        ("2025-12-13T10:00", "2025-12-13"),  # the day after the term ends
+        ("2025-08-22T10:00", "2025-08-22"),  # the Friday before it starts
+    ],
+)
+def test_at_outside_the_term_returns_no_rooms(
+    client: TestClient,
+    term: Term,
+    rooms: dict[str, Room],
+    at: str,
+    expected_date: str,
+):
+    body = _at(client, term, at).json()
+
+    assert (body["total"], body["results"]) == (0, [])
+    assert body["date"] == expected_date
+
+
+def test_at_a_past_date_in_the_term_still_works(
+    client: TestClient, term: Term, rooms: dict[str, Room], clock
+):
+    clock(datetime(2025, 11, 20, 20, 0, tzinfo=timezone.utc))
+
+    response = _at(client, term, "2025-09-05T10:00")
+
+    assert _room_keys(response) == [("Dwinelle", "109"), ("Dwinelle", "242")]
+
+
+def test_at_keeps_seconds_like_an_explicit_time(
+    client: TestClient, term: Term, rooms: dict[str, Room]
+):
+    """10:00:30 leaves 59.5 minutes in Dwinelle 109, under the 60 default."""
+    response = _at(client, term, "2025-09-05T10:00:30")
+
+    assert _room_keys(response) == [("Dwinelle", "242")]
+    assert _results(response)[0]["available_minutes"] == 239
+
+
+def test_at_without_a_time_means_midnight(
+    client: TestClient, term: Term, rooms: dict[str, Room]
+):
+    """Midnight is outside the 07:00-22:00 window, so no rooms match."""
+    body = _at(client, term, "2025-09-05").json()
+
+    assert (body["date"], body["time"], body["total"]) == ("2025-09-05", "00:00", 0)
+
+
+def test_at_works_with_filters_and_paging(
+    client: TestClient, term: Term, rooms: dict[str, Room]
+):
+    response = _at(client, term, "2025-09-05T10:00", building_code="dwinelle", limit=1)
+
+    assert response.json()["total"] == 2
+    assert _room_keys(response) == [("Dwinelle", "109")]
+
+
+def test_a_weekday_and_time_search_has_no_date(
+    client: TestClient, term: Term, rooms: dict[str, Room]
+):
+    body = _get(client, term, day_of_week=FRIDAY, time="10:00").json()
+
+    assert body["date"] is None
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"at": "2025-09-05T10:00", "day_of_week": FRIDAY},
+        {"at": "2025-09-05T10:00", "time": "10:00"},
+        {"at": "2025-09-05T10:00", "day_of_week": FRIDAY, "time": "10:00"},
+        {"at": "2025-13-01T10:00"},
+        {"at": "2025-09-05T25:00"},
+        {"at": "not-a-date"},
+    ],
+)
+def test_invalid_at_is_rejected(client: TestClient, term: Term, params):
+    assert _get(client, term, **params).status_code == 422
