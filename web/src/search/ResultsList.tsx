@@ -4,7 +4,12 @@ import type {
   AvailabilityResult,
   SearchWhen,
 } from '../api/availability'
-import { formatClockTime, formatDuration, formatSearchMoment } from '../format'
+import {
+  formatClockTime,
+  formatDuration,
+  formatMinimumDuration,
+  formatSearchMoment,
+} from '../format'
 import type { AvailabilityState } from './useAvailability'
 import styles from './AvailabilitySearch.module.css'
 
@@ -49,14 +54,23 @@ function ResultRow({ result }: { result: AvailabilityResult }) {
   )
 }
 
-function Summary({ when, page }: { when: SearchWhen; page: AvailabilityPage }) {
+function Summary({
+  when,
+  minimumMinutes,
+  page,
+}: {
+  when: SearchWhen
+  minimumMinutes: number
+  page: AvailabilityPage
+}) {
   const moment = formatSearchMoment(when, page)
+  const minimum = formatMinimumDuration(minimumMinutes)
   if (page.total === 0) {
     return (
       <>
         <h2 className={styles.summaryTitle}>No rooms free {moment}</h2>
         <p className={styles.secondary}>
-          Nothing is free for at least an hour {moment}. Availability covers
+          Nothing is free for at least {minimum} {moment}. Availability covers
           7&nbsp;a.m. to 10&nbsp;p.m. on days during the term.
         </p>
       </>
@@ -67,7 +81,7 @@ function Summary({ when, page }: { when: SearchWhen; page: AvailabilityPage }) {
       <h2 className={styles.summaryTitle}>
         {roomCount(page.total)} free {moment}
       </h2>
-      <p className={styles.secondary}>For at least an hour</p>
+      <p className={styles.secondary}>For at least {minimum}</p>
     </>
   )
 }
@@ -117,7 +131,11 @@ function ResultsList({
       aria-busy={loading}
     >
       <div className={styles.summary} aria-live="polite">
-        <Summary when={resultsQuery.when} page={page} />
+        <Summary
+          when={resultsQuery.when}
+          minimumMinutes={resultsQuery.minimumMinutes}
+          page={page}
+        />
       </div>
       {results.length > 0 && (
         <ul className={styles.list}>

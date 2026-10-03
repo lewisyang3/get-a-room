@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { DEFAULT_MINIMUM_MINUTES } from '../api/availability'
 import { termId as configuredTermId } from '../config'
 import ResultsList from './ResultsList'
@@ -8,7 +8,18 @@ import styles from './AvailabilitySearch.module.css'
 
 function Search({ termId }: { termId: number }) {
   const availability = useAvailability(termId)
-  const { search } = availability
+  const { search, query } = availability
+  const [minimumMinutes, setMinimumMinutes] = useState(DEFAULT_MINIMUM_MINUTES)
+
+  // Re-runs the latest search's time with the new minimum. A time typed into
+  // Later but not yet submitted waits for Find rooms.
+  function changeMinimumMinutes(minutes: number) {
+    setMinimumMinutes(minutes)
+    void search({
+      when: query?.when ?? { kind: 'now' },
+      minimumMinutes: minutes,
+    })
+  }
 
   // Most visits ask "what's free now?", so answer it without a tap.
   useEffect(() => {
@@ -21,9 +32,9 @@ function Search({ termId }: { termId: number }) {
   return (
     <section className={styles.search} aria-label="Find a room">
       <SearchForm
-        onSearch={(when) =>
-          void search({ when, minimumMinutes: DEFAULT_MINIMUM_MINUTES })
-        }
+        onSearch={(when) => void search({ when, minimumMinutes })}
+        minimumMinutes={minimumMinutes}
+        onMinimumMinutesChange={changeMinimumMinutes}
       />
       <ResultsList
         {...availability}
