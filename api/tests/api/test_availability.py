@@ -85,6 +85,15 @@ def _get(client: TestClient, term: Term, **params):
     return client.get("/availability", params={"term_id": term.term_id, **params})
 
 
+def _assert_invalid(response, param: str) -> None:
+    """A 422 in FastAPI's validation-error format, blaming `param`."""
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert isinstance(detail, list)
+    assert ["query", param] in [error["loc"] for error in detail], detail
+    assert all(error["msg"] for error in detail)
+
+
 def _results(response) -> list[dict]:
     assert response.status_code == 200, response.text
     return response.json()["results"]
@@ -287,7 +296,7 @@ def test_an_invalid_minimum_is_rejected(
         client, term, day_of_week=FRIDAY, time="10:00", minimum_minutes=minimum_minutes
     )
 
-    assert response.status_code == 422
+    _assert_invalid(response, "minimum_minutes")
 
 
 # --- filters and ordering ---
@@ -345,23 +354,25 @@ def test_an_unknown_term_is_404_for_now_too(client: TestClient, term: Term, cloc
 
 
 @pytest.mark.parametrize(
-    "params",
+    "params, blamed",
     [
-        {"day_of_week": FRIDAY},
-        {"time": "10:00"},
-        {"day_of_week": 7, "time": "10:00"},
-        {"day_of_week": -1, "time": "10:00"},
-        {"day_of_week": FRIDAY, "time": "25:00"},
-        {"day_of_week": FRIDAY, "time": "10:00+02:00"},
-        {"day_of_week": FRIDAY, "time": "10:00Z"},
+        ({"day_of_week": FRIDAY}, "time"),
+        ({"time": "10:00"}, "day_of_week"),
+        ({"day_of_week": 7, "time": "10:00"}, "day_of_week"),
+        ({"day_of_week": -1, "time": "10:00"}, "day_of_week"),
+        ({"day_of_week": FRIDAY, "time": "25:00"}, "time"),
+        ({"day_of_week": FRIDAY, "time": "10:00+02:00"}, "time"),
+        ({"day_of_week": FRIDAY, "time": "10:00Z"}, "time"),
     ],
 )
-def test_invalid_day_or_time_is_rejected(client: TestClient, term: Term, params):
-    assert _get(client, term, **params).status_code == 422
+def test_invalid_day_or_time_is_rejected(
+    client: TestClient, term: Term, params, blamed: str
+):
+    _assert_invalid(_get(client, term, **params), blamed)
 
 
 def test_term_id_is_required(client: TestClient):
-    assert client.get("/availability").status_code == 422
+    _assert_invalid(client.get("/availability"), "term_id")
 
 
 # --- building and room search (GAR-029) ---
@@ -526,7 +537,8 @@ def test_now_outside_the_term_still_reports_the_moment_searched(
     ],
 )
 def test_invalid_search_or_paging_is_rejected(client: TestClient, term: Term, params):
-    assert _search(client, term, **params).status_code == 422
+    [blamed] = params
+    _assert_invalid(_search(client, term, **params), blamed)
 
 
 # --- a selected date and time (GAR-030) ---
@@ -685,4 +697,4 @@ def test_a_weekday_and_time_search_has_no_date(
     ],
 )
 def test_invalid_at_is_rejected(client: TestClient, term: Term, params):
-    assert _get(client, term, **params).status_code == 422
+    _assert_invalid(_get(client, term, **params), "at")
