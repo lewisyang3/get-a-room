@@ -163,6 +163,45 @@ describe('useAvailability', () => {
     expect(result.current.results.map((r) => r.room_id)).toEqual([1, 2, 3])
   })
 
+  it("pins later pages of a now search to the first page's moment", async () => {
+    const { pending } = controlledFetch()
+    const { result } = renderHook(() => useAvailability(3))
+
+    act(() => {
+      void result.current.search({ kind: 'now' })
+    })
+    await act(async () =>
+      pending[0].resolve(
+        jsonResponse({ ...page([1, 2], 3), date: '2026-10-05', time: '13:59' }),
+      ),
+    )
+    act(() => {
+      void result.current.loadMore()
+    })
+
+    const url = new URL(pending[1].url)
+    expect(url.searchParams.get('at')).toBe('2026-10-05T13:59')
+    expect(url.searchParams.get('offset')).toBe('2')
+    // The results are still described as a now search.
+    expect(result.current.when).toEqual({ kind: 'now' })
+  })
+
+  it('skips rooms already listed when appending a page', async () => {
+    const { pending } = controlledFetch()
+    const { result } = renderHook(() => useAvailability(3))
+
+    act(() => {
+      void result.current.search({ kind: 'now' })
+    })
+    await act(async () => pending[0].resolve(jsonResponse(page([1, 2], 4))))
+    act(() => {
+      void result.current.loadMore()
+    })
+    await act(async () => pending[1].resolve(jsonResponse(page([2, 3], 4, 2))))
+
+    expect(result.current.results.map((r) => r.room_id)).toEqual([1, 2, 3])
+  })
+
   it('keeps loaded rooms when loading more fails', async () => {
     const { pending } = controlledFetch()
     const { result } = renderHook(() => useAvailability(3))

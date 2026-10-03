@@ -40,6 +40,25 @@ function toApiError(error: unknown): ApiError {
     : new ApiError('server', 'The search failed unexpectedly.', null)
 }
 
+/** The search that repeats `page`'s moment exactly: the date and time the
+ * API reported, rather than "now" again. */
+export function pinnedSearch(
+  when: SearchWhen,
+  page: AvailabilityPage,
+): SearchWhen {
+  return page.date ? { kind: 'at', at: `${page.date}T${page.time}` } : when
+}
+
+// Appends a page, skipping any room already listed, so a room can't appear
+// twice even if the data changed between requests.
+function appendNew(
+  shown: AvailabilityResult[],
+  next: AvailabilityResult[],
+): AvailabilityResult[] {
+  const ids = new Set(shown.map((result) => result.room_id))
+  return [...shown, ...next.filter((result) => !ids.has(result.room_id))]
+}
+
 /** Searches a term's availability. A new search aborts any request in flight,
  * so the latest search always wins. */
 export function useAvailability(termId: number) {
@@ -102,7 +121,10 @@ export function useAvailability(termId: number) {
     ) {
       return
     }
-    const { when } = state
+    // "now" is worked out from the API's clock on every request, so asking
+    // for it again could page through a different minute's rooms. Later pages
+    // ask for the exact moment the first page was computed for.
+    const when = pinnedSearch(state.when, state.page)
     const offset = state.results.length
     const signal = restart()
     setState((previous) => ({
@@ -116,7 +138,7 @@ export function useAvailability(termId: number) {
       setState((previous) => ({
         ...previous,
         page,
-        results: [...previous.results, ...page.results],
+        results: appendNew(previous.results, page.results),
         loadingMore: false,
       }))
     } catch (error) {
