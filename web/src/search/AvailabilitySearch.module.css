@@ -30,48 +30,6 @@
   font-weight: 600;
 }
 
-/* A segmented control built from real radio buttons. */
-.segmented {
-  display: inline-flex;
-  padding: 0.1875rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-}
-
-.segment {
-  position: relative;
-  min-height: 2.25rem;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--space-4);
-  border-radius: 999px;
-  color: var(--text-secondary);
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.segment input {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.segment:has(input:checked) {
-  background: var(--bg);
-  color: var(--text);
-  box-shadow:
-    0 0 0 1px var(--border),
-    0 1px 2px rgb(0 0 0 / 0.08);
-}
-
-.segment:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .dateTime {
   min-height: 2.75rem;
   padding: 0 var(--space-3);

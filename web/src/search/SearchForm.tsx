@@ -2,13 +2,21 @@ import { useId, useState, type FormEvent } from 'react'
 import type { SearchWhen } from '../api/availability'
 import { nextHalfHourInPacific } from '../format'
 import styles from './AvailabilitySearch.module.css'
+import SegmentedControl, { type SegmentedOption } from './SegmentedControl'
 
 type Props = {
   onSearch: (when: SearchWhen) => void
 }
 
+type Mode = 'now' | 'later'
+
+const MODE_OPTIONS: SegmentedOption<Mode>[] = [
+  { value: 'now', label: 'Now' },
+  { value: 'later', label: 'Later' },
+]
+
 function SearchForm({ onSearch }: Props) {
-  const [mode, setMode] = useState<'now' | 'later'>('now')
+  const [mode, setMode] = useState<Mode>('now')
   const [at, setAt] = useState(() => nextHalfHourInPacific(new Date()))
   const id = useId()
   const hintId = `${id}-hint`
@@ -23,28 +31,12 @@ function SearchForm({ onSearch }: Props) {
     <form className={styles.form} onSubmit={handleSubmit} aria-label="Search">
       <fieldset className={styles.when} aria-describedby={hintId}>
         <legend className={styles.legend}>When</legend>
-        <div className={styles.segmented}>
-          <label className={styles.segment}>
-            <input
-              type="radio"
-              name={`${id}-mode`}
-              value="now"
-              checked={mode === 'now'}
-              onChange={() => setMode('now')}
-            />
-            Now
-          </label>
-          <label className={styles.segment}>
-            <input
-              type="radio"
-              name={`${id}-mode`}
-              value="later"
-              checked={mode === 'later'}
-              onChange={() => setMode('later')}
-            />
-            Later
-          </label>
-        </div>
+        <SegmentedControl
+          name={`${id}-mode`}
+          options={MODE_OPTIONS}
+          value={mode}
+          onChange={setMode}
+        />
         {mode === 'later' && (
           <>
             <label htmlFor={atId} className={styles.visuallyHidden}>
