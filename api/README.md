@@ -132,6 +132,26 @@ scheduler's equivalent.
   Before deploying to a database that already has terms, check their URLs with
   `python -m ingestion.cli term list`.
 
+## Querying availability
+
+`GET /availability` returns the rooms with no scheduled class at a given time,
+how long each stays free, and the room and building ids. Interactive docs are at
+`/docs` while the API is running.
+
+```bash
+# Right now, in the term's own timezone:
+curl 'http://localhost:8000/availability?term_id=1'
+# Fridays at 14:30, rooms free for at least 90 minutes:
+curl 'http://localhost:8000/availability?term_id=1&day_of_week=4&time=14:30&minimum_minutes=90'
+```
+
+- `day_of_week` (0 = Monday) and `time` go together; omit both to search now.
+  Times are local to the term's `timezone`, so daylight saving time doesn't
+  shift results.
+- Searching now outside the term's start and end dates returns no rooms.
+- Availability only covers 07:00–22:00; searches outside it return no rooms.
+- `minimum_minutes` defaults to 60 (1–1440). An unknown term is a 404.
+
 ## Running tests and lint locally
 
 ```bash

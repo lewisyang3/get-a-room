@@ -34,7 +34,7 @@ def _minutes_since_midnight(value: time) -> float:
 )
 def get_available_rooms(
     # Identifies the academic term being searched.
-    term_id: int,
+    term_id: int = Query(..., description="The term to search."),
     # Uses 0 for Monday through 6 for Sunday.
     day_of_week: int | None = Query(
         None,
@@ -63,7 +63,9 @@ def get_available_rooms(
         description="Only return rooms free for at least this many minutes.",
     ),
     # Optionally limits results to one building.
-    building_id: int | None = None,
+    building_id: int | None = Query(
+        None, description="Only return rooms in this building."
+    ),
     # Gets a database session from FastAPI.
     db: Session = Depends(get_db),
     # Gets the current time from FastAPI.
