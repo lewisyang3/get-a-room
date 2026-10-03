@@ -5,9 +5,25 @@ scheduled class, so they can use them to study. It's a React + TypeScript app
 built with Vite, and it reads availability from the
 [Get a Room API](https://github.com/lewisyang3/get-a-room).
 
-Availability comes from the term's **scheduled** classes. It doesn't guarantee a
-room is unlocked or open to students, and it doesn't show live occupancy or
-support reservations.
+Availability comes from the term's **scheduled** classes, which limits what it
+can tell you (see below).
+
+## What it can and can't tell you
+
+Get a Room only knows the class schedule. The landing page sums this up in one
+line; the detail is here.
+
+- **Scheduled, not live.** It doesn't track who is actually in a room, so a room
+  with no class may already be in use.
+- **No guarantee of access.** A room with no class may still be locked or not
+  open to students.
+- **No reservations.** Rooms can't be booked. It's first come, first served.
+- **Holidays and breaks aren't included.** The schedule doesn't know about them,
+  so check the academic calendar.
+- **Times are Pacific time,** the term's timezone, so daylight saving time
+  doesn't shift results.
+- **07:00 to 22:00, to the minute.** Availability covers those hours only, and
+  seconds are ignored.
 
 ## Prerequisites
 
