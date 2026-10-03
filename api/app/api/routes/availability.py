@@ -1,4 +1,4 @@
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -23,7 +23,11 @@ def get_now() -> datetime:
 
 # Converts a time of day to minutes since midnight, for duration math.
 def _minutes_since_midnight(value: time) -> float:
-    return value.hour * 60 + value.minute + value.second / 60
+    return (
+        value.hour * 60
+        + value.minute
+        + (value.second + value.microsecond / 1_000_000) / 60
+    )
 
 
 # Returns rooms that are available at a requested time, or right now.
@@ -106,6 +110,14 @@ def get_available_rooms(
         day_of_week = local_now.weekday()
         requested_time = local_now.time().replace(second=0, microsecond=0)
 
+    # Finds the earliest end time that still leaves the minimum free time.
+    threshold = datetime.combine(date.min, requested_time) + timedelta(
+        minutes=minimum_minutes
+    )
+    # A minimum that runs past midnight can't be met by any room.
+    if threshold.date() != date.min:
+        return []
+
     # Builds a query joining availability intervals to rooms and buildings.
     statement = (
         select(AvailabilityInterval, Room, Building)
@@ -116,6 +128,8 @@ def get_available_rooms(
             AvailabilityInterval.day_of_week == day_of_week,
             AvailabilityInterval.start_time <= requested_time,
             AvailabilityInterval.end_time > requested_time,
+            # Keeps only intervals at least minimum_minutes long from now on.
+            AvailabilityInterval.end_time >= threshold.time(),
             Room.in_use.is_(True),
             Building.included_in_coverage.is_(True),
         )
@@ -124,6 +138,9 @@ def get_available_rooms(
     # Adds the building filter only when one was provided.
     if building_id is not None:
         statement = statement.where(Building.building_id == building_id)
+
+    # Sorts by building name and room number, then id as a tiebreak.
+    statement = statement.order_by(Building.name, Room.room_number, Room.room_id)
 
     # Runs the query and retrieves the matching rows.
     rows = db.execute(statement).all()
@@ -139,10 +156,6 @@ def get_available_rooms(
             - _minutes_since_midnight(requested_time)
         )
 
-        # Skips intervals shorter than the requested minimum.
-        if available_minutes < minimum_minutes:
-            continue
-
         # Adds the room to the response.
         results.append(
             AvailabilityResponse(
@@ -156,15 +169,6 @@ def get_available_rooms(
                 available_minutes=available_minutes,
             )
         )
-
-    # Sorts results by building name and room number, then id as a tiebreak.
-    results.sort(
-        key=lambda result: (
-            result.building_name,
-            result.room_number,
-            result.room_id,
-        )
-    )
 
     # Returns the available rooms.
     return results
