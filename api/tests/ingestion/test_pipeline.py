@@ -5,7 +5,7 @@ import pytest
 
 from ingestion.fetch import FetchError
 from ingestion.pipeline import IngestionPipeline
-from tests.ingestion.conftest import FakeResponse, FakeSession, listing_handler
+from tests.conftest import FakeResponse, FakeSession, listing_handler
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "sections"
 

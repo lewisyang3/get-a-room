@@ -1,26 +1,12 @@
-from collections.abc import Iterator
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.db import get_db
-from app.main import app
 from app.models.models import ImportStatus, Term
 from ingestion.persist import run_import
-from tests.ingestion.conftest import FakeSession, listing_handler
+from tests.conftest import FakeSession, listing_handler
 
 FRIDAY = 4
-
-
-@pytest.fixture
-def client(db: Session) -> Iterator[TestClient]:
-    """The real app, reading from the test database session."""
-    app.dependency_overrides[get_db] = lambda: db
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture
