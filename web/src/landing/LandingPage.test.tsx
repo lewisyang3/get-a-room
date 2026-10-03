@@ -1,9 +1,16 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import LandingPage from './LandingPage'
 
-function limitations() {
-  return screen.getByRole('region', { name: 'Before you go' })
+// The note's sentence is split by the "class schedule" link, so tests match
+// the whole paragraph's text rather than a single text node.
+function note() {
+  const paragraph = screen
+    .getByRole('link', { name: 'class schedule' })
+    .closest('p')
+  if (!paragraph)
+    throw new Error('The class schedule link is not in a paragraph')
+  return paragraph
 }
 
 describe('LandingPage', () => {
@@ -13,70 +20,40 @@ describe('LandingPage', () => {
 
   describe('acceptance criteria (GAR-033)', () => {
     it('explains that availability comes from the class schedule', () => {
-      const howItWorks = screen.getByRole('region', { name: 'How it works' })
-
-      expect(
-        within(howItWorks).getByText(/the term's scheduled classes/),
-      ).toBeInTheDocument()
-      expect(
-        within(limitations()).getByRole('heading', {
-          name: 'Scheduled, not live',
-        }),
-      ).toBeInTheDocument()
-    })
-
-    it('does not promise that a room is open or accessible', () => {
-      const section = limitations()
-
-      expect(
-        within(section).getByRole('heading', {
-          name: 'No guarantee of access',
-        }),
-      ).toBeInTheDocument()
-      expect(
-        within(section).getByText(
-          /may still be locked or not open to students/,
-        ),
-      ).toBeInTheDocument()
+      expect(note()).toHaveTextContent(/based on the class schedule/i)
     })
 
     it('states that live occupancy is not supported', () => {
-      expect(
-        within(limitations()).getByText(
-          /doesn't track who is actually in a room/,
-        ),
-      ).toBeInTheDocument()
+      expect(note()).toHaveTextContent(/not who's actually in the room/)
+    })
+
+    it('does not promise that a room is open or accessible', () => {
+      expect(note()).toHaveTextContent(/rooms may be locked/i)
     })
 
     it('states that reservations are not supported', () => {
-      const section = limitations()
-
-      expect(
-        within(section).getByRole('heading', { name: 'No reservations' }),
-      ).toBeInTheDocument()
-      expect(within(section).getByText(/can't be booked/)).toBeInTheDocument()
+      expect(note()).toHaveTextContent(/can't be reserved/)
     })
   })
 
   describe('structure', () => {
-    it('has one h1 followed by the two section headings', () => {
-      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
-      expect(
-        screen
-          .getAllByRole('heading', { level: 2 })
-          .map((heading) => heading.textContent),
-      ).toEqual(['How it works', 'Before you go'])
+    it('has the headline as its only heading', () => {
+      expect(screen.getAllByRole('heading')).toEqual([
+        screen.getByRole('heading', {
+          level: 1,
+          name: 'Find an empty classroom to study in.',
+        }),
+      ])
     })
 
-    it('has banner, main and footer landmarks', () => {
+    it('has banner and main landmarks', () => {
       expect(screen.getByRole('banner')).toBeInTheDocument()
       expect(screen.getByRole('main')).toBeInTheDocument()
-      expect(screen.getByRole('contentinfo')).toBeInTheDocument()
     })
 
     it('links to the source class schedule', () => {
       expect(
-        screen.getByRole('link', { name: 'classes.berkeley.edu' }),
+        screen.getByRole('link', { name: 'class schedule' }),
       ).toHaveAttribute('href', 'https://classes.berkeley.edu')
     })
   })
