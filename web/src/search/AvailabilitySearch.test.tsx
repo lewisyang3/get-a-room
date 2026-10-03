@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AvailabilityPage, AvailabilityResult } from '../api/availability'
@@ -207,6 +207,100 @@ describe('AvailabilitySearch', () => {
       await screen.findByRole('heading', { name: '1 room free now' }),
     ).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  describe('minimum duration filter', () => {
+    it('defaults to an hour', async () => {
+      const fetchMock = stubResponses(() => jsonResponse(page([room(1)])))
+      render(<AvailabilitySearch termId={3} />)
+
+      await screen.findByRole('heading', { name: '1 room free now' })
+      expect(screen.getByRole('radio', { name: nbsp('1 h') })).toBeChecked()
+      expect(
+        requestedUrl(fetchMock, 0).searchParams.get('minimum_minutes'),
+      ).toBe('60')
+      expect(screen.getByText('For at least an hour')).toBeInTheDocument()
+    })
+
+    it('updates the results as soon as it changes', async () => {
+      const user = userEvent.setup()
+      const fetchMock = stubResponses(
+        () => jsonResponse(page([room(1), room(2)])),
+        () => jsonResponse(page([room(2)])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '2 rooms free now' })
+
+      await user.click(screen.getByRole('radio', { name: nbsp('2 h') }))
+
+      expect(
+        await screen.findByRole('heading', { name: '1 room free now' }),
+      ).toBeInTheDocument()
+      expect(screen.getByText('For at least 2 hours')).toBeInTheDocument()
+      const url = requestedUrl(fetchMock, 1)
+      expect(url.searchParams.get('minimum_minutes')).toBe('120')
+      expect(url.searchParams.has('at')).toBe(false)
+    })
+
+    it('keeps a submitted later time', async () => {
+      const user = userEvent.setup()
+      const later = { date: '2026-10-06', time: '09:00' }
+      const fetchMock = stubResponses(
+        () => jsonResponse(page([room(1)])),
+        () => jsonResponse(page([room(1)], later)),
+        () => jsonResponse(page([room(1), room(2)], later)),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.click(screen.getByRole('radio', { name: 'Later' }))
+      const input = screen.getByLabelText('Date and time')
+      await user.clear(input)
+      await user.type(input, '2026-10-06T09:00')
+      await user.click(screen.getByRole('button', { name: 'Find rooms' }))
+      await screen.findByRole('heading', { name: /^1 room free at/ })
+      await user.click(screen.getByRole('radio', { name: nbsp('30 min') }))
+
+      await screen.findByRole('heading', { name: /^2 rooms free at/ })
+      const url = requestedUrl(fetchMock, 2)
+      expect(url.searchParams.get('at')).toBe('2026-10-06T09:00')
+      expect(url.searchParams.get('minimum_minutes')).toBe('30')
+    })
+
+    it("doesn't apply a later time that wasn't submitted", async () => {
+      const user = userEvent.setup()
+      const fetchMock = stubResponses(
+        () => jsonResponse(page([room(1)])),
+        () => jsonResponse(page([room(1)])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.click(screen.getByRole('radio', { name: 'Later' }))
+      await user.click(screen.getByRole('radio', { name: nbsp('3 h') }))
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+      expect(requestedUrl(fetchMock, 1).searchParams.has('at')).toBe(false)
+    })
+
+    it('describes the shown results while a new minimum loads', async () => {
+      const user = userEvent.setup()
+      let respond: (response: Response) => void = () => {}
+      stubResponses(
+        () => jsonResponse(page([room(1)])),
+        () => new Promise<Response>((resolve) => (respond = resolve)),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.click(screen.getByRole('radio', { name: nbsp('3 h') }))
+      expect(screen.getByText('For at least an hour')).toBeInTheDocument()
+
+      respond(jsonResponse(page([])))
+      expect(
+        await screen.findByText(/^Nothing is free for at least 3 hours now\./),
+      ).toBeInTheDocument()
+    })
   })
 
   it.each([

@@ -25,6 +25,14 @@ export function formatDuration(totalMinutes: number): string {
   return parts.join(' ')
 }
 
+/** Describes a minimum free time for a sentence, e.g. "30 minutes",
+ * "an hour" or "2 hours". */
+export function formatMinimumDuration(minutes: number): string {
+  if (minutes === 60) return 'an hour'
+  if (minutes % 60 === 0) return `${minutes / 60} hours`
+  return minutes === 1 ? '1 minute' : `${minutes} minutes`
+}
+
 /** Formats a `YYYY-MM-DD` date as e.g. "Mon, Oct 5". */
 export function formatShortDate(value: string): string {
   const [year, month, day] = value.split('-').map(Number)

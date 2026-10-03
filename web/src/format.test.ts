@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatClockTime,
   formatDuration,
+  formatMinimumDuration,
   formatSearchMoment,
   formatShortDate,
   nextHalfHourInPacific,
@@ -30,6 +31,19 @@ describe('formatDuration', () => {
     [0, '0 min'],
   ])('formats %i minutes as %s', (minutes, expected) => {
     expect(formatDuration(minutes)).toBe(expected.replace(/(\d) /g, '$1 '))
+  })
+})
+
+describe('formatMinimumDuration', () => {
+  it.each([
+    [30, '30 minutes'],
+    [60, 'an hour'],
+    [120, '2 hours'],
+    [180, '3 hours'],
+    [90, '90 minutes'],
+    [1, '1 minute'],
+  ])('describes %i minutes as %s', (minutes, expected) => {
+    expect(formatMinimumDuration(minutes)).toBe(expected)
   })
 })
 
