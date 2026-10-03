@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.queries import searchable_rooms
 from app.api.schemas.availability import AvailabilityPage, AvailabilityResponse
 from app.api.schemas.errors import ErrorResponse, ValidationErrorResponse
 from app.db import get_db
@@ -273,8 +274,7 @@ def get_available_rooms(
             AvailabilityInterval.end_time > requested_time,
             # Keeps only intervals at least minimum_minutes long from now on.
             AvailabilityInterval.end_time >= threshold.time(),
-            Room.in_use.is_(True),
-            Building.included_in_coverage.is_(True),
+            searchable_rooms(),
         )
     )
 
