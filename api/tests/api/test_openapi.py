@@ -7,11 +7,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.schemas.availability import AvailabilityPage
+from app.api.schemas.buildings import BuildingList
 from app.api.schemas.errors import ErrorResponse, ValidationErrorResponse
 from app.api.schemas.health import HealthResponse
 from app.main import app
 
-OWN_SCHEMAS = [AvailabilityPage, ErrorResponse, ValidationErrorResponse, HealthResponse]
+OWN_SCHEMAS = [
+    AvailabilityPage,
+    BuildingList,
+    ErrorResponse,
+    ValidationErrorResponse,
+    HealthResponse,
+]
 
 
 @pytest.fixture(scope="module")
@@ -41,9 +48,11 @@ def test_every_parameter_has_a_description(spec: dict):
 
 def test_every_field_of_our_schemas_has_a_description(spec: dict):
     schemas = spec["components"]["schemas"]
-    our_names = {"AvailabilityResponse", "ValidationErrorDetail"} | {
-        model.__name__ for model in OWN_SCHEMAS
-    }
+    our_names = {
+        "AvailabilityResponse",
+        "BuildingResponse",
+        "ValidationErrorDetail",
+    } | {model.__name__ for model in OWN_SCHEMAS}
     for schema_name in our_names:
         for field, definition in schemas[schema_name]["properties"].items():
             assert definition.get("description"), f"{schema_name}.{field}"
@@ -68,6 +77,13 @@ def test_availability_documents_its_responses(spec: dict):
     assert schema_ref("200").endswith("/AvailabilityPage")
     assert schema_ref("404").endswith("/ErrorResponse")
     assert schema_ref("422").endswith("/ValidationErrorResponse")
+
+
+def test_buildings_documents_its_response(spec: dict):
+    responses = spec["paths"]["/buildings"]["get"]["responses"]
+    schema = responses["200"]["content"]["application/json"]["schema"]
+
+    assert schema["$ref"].endswith("/BuildingList")
 
 
 def test_every_schema_reference_resolves(spec: dict):
