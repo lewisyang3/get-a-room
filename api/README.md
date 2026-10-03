@@ -168,8 +168,10 @@ Responses are one page of results:
   - Neither: right now.
 
   Searches always use the local clock time in the term's timezone, so daylight
-  saving time doesn't shift results. The response's `date`, `day_of_week` and
-  `time` are what was searched (`date` is `null` for a weekly search).
+  saving time doesn't shift results. Every search is to the minute: seconds
+  are ignored, so `10:00:30` searches `10:00`. The response's `date`,
+  `day_of_week` and `time` are what was searched (`date` is `null` for a weekly
+  search).
 - A date outside the term's start and end dates returns no rooms, whether it
   comes from `at` or is today's date in a "now" search. Past dates within the
   term work.

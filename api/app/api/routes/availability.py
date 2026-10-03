@@ -78,14 +78,18 @@ def _resolve_search(
     # availability window, so their ambiguity can't change results.
     if at is not None:
         if at.tzinfo is not None:
-            return _local_moment(term, at.astimezone(term_timezone))
-        return _local_moment(term, at.replace(tzinfo=term_timezone))
+            moment = _local_moment(term, at.astimezone(term_timezone))
+        else:
+            moment = _local_moment(term, at.replace(tzinfo=term_timezone))
     # A weekday and time search every week of the term, so there's no date.
-    if day_of_week is not None and requested_time is not None:
-        return _SearchMoment(None, day_of_week, requested_time, False)
-    # Otherwise searches right now in the term's timezone, to the minute.
-    local_now = now.astimezone(term_timezone)
-    return _local_moment(term, local_now.replace(second=0, microsecond=0))
+    elif day_of_week is not None and requested_time is not None:
+        moment = _SearchMoment(None, day_of_week, requested_time, False)
+    # Otherwise searches right now in the term's timezone.
+    else:
+        moment = _local_moment(term, now.astimezone(term_timezone))
+    # Every search is to the minute, so the response's time, available_from,
+    # and available_minutes agree: 10:00:30 searches 10:00.
+    return moment._replace(time=moment.time.replace(second=0, microsecond=0))
 
 
 # Returns rooms that are available at a requested time, or right now.
@@ -113,8 +117,8 @@ def get_available_rooms(
         alias="time",
         description=(
             "Local time of day in the term's timezone, e.g. `14:30`, without a "
-            "UTC offset. Give together with `day_of_week`; omit both to search "
-            "right now."
+            "UTC offset; seconds are ignored. Give together with `day_of_week`; "
+            "omit both to search right now."
         ),
     ),
     # Specifies a calendar date and time to search.
@@ -124,8 +128,8 @@ def get_available_rooms(
             "Date and time to search, e.g. `2025-10-17T14:30`. Without a UTC "
             "offset it's a clock time in the term's timezone; with one (`Z`, "
             "`+09:00`) it's converted to the term's timezone. Can't be combined "
-            "with `day_of_week` or `time`. A date outside the term returns no "
-            "rooms."
+            "with `day_of_week` or `time`. Seconds are ignored. A date outside "
+            "the term returns no rooms."
         ),
     ),
     # Removes availability gaps shorter than this value.

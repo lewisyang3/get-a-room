@@ -625,14 +625,26 @@ def test_at_a_past_date_in_the_term_still_works(
     assert _room_keys(response) == [("Dwinelle", "109"), ("Dwinelle", "242")]
 
 
-def test_at_keeps_seconds_like_an_explicit_time(
-    client: TestClient, term: Term, rooms: dict[str, Room]
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"at": "2025-09-05T10:00:30"},
+        {"at": "2025-09-05T10:00:59.999"},
+        {"day_of_week": FRIDAY, "time": "10:00:30"},
+    ],
+)
+def test_searches_ignore_seconds(
+    client: TestClient, term: Term, rooms: dict[str, Room], params
 ):
-    """10:00:30 leaves 59.5 minutes in Dwinelle 109, under the 60 default."""
-    response = _at(client, term, "2025-09-05T10:00:30")
+    """Every search is to the minute, as "now" is: 10:00:30 searches 10:00,
+    so the response's time, available_from, and available_minutes agree."""
+    response = _get(client, term, **params)
 
-    assert _room_keys(response) == [("Dwinelle", "242")]
-    assert _results(response)[0]["available_minutes"] == 239
+    to_the_minute = _get(client, term, day_of_week=FRIDAY, time="10:00")
+    assert response.json()["time"] == "10:00"
+    assert _results(response) == _results(to_the_minute)
+    assert _room_keys(response) == [("Dwinelle", "109"), ("Dwinelle", "242")]
+    assert [r["available_minutes"] for r in _results(response)] == [60, 240]
 
 
 def test_at_without_a_time_means_midnight(
