@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useEffect, useId, useRef, type Ref } from 'react'
 import type {
   AvailabilityPage,
   AvailabilityResult,
@@ -13,7 +13,7 @@ import {
   formatMinimumDuration,
   formatSearchMoment,
 } from '../format'
-import type { AvailabilityState } from './useAvailability'
+import type { AvailabilityState, SearchQuery } from './useAvailability'
 import styles from './AvailabilitySearch.module.css'
 
 type Props = AvailabilityState & {
@@ -107,7 +107,8 @@ function BuildingGroupView({
             href={directions}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`Directions to ${name}`}
+            // Says it opens a new tab, which the visible text doesn't.
+            aria-label={`Directions to ${name} (opens in a new tab)`}
           >
             Directions
           </a>
@@ -146,6 +147,7 @@ function ResultRow({ result }: { result: AvailabilityResult }) {
 }
 
 function Summary({
+  titleRef,
   when,
   minimumMinutes,
   buildingName,
@@ -153,6 +155,7 @@ function Summary({
   nearestFirst,
   page,
 }: {
+  titleRef: Ref<HTMLHeadingElement>
   when: SearchWhen
   minimumMinutes: number
   buildingName: string | null
@@ -168,7 +171,7 @@ function Summary({
   if (page.total === 0) {
     return (
       <>
-        <h2 className={styles.summaryTitle}>
+        <h2 ref={titleRef} className={styles.summaryTitle} tabIndex={-1}>
           No rooms free {moment}
           {place}
           {matching}
@@ -189,7 +192,7 @@ function Summary({
   }
   return (
     <>
-      <h2 className={styles.summaryTitle}>
+      <h2 ref={titleRef} className={styles.summaryTitle} tabIndex={-1}>
         {roomCount(page.total)} free {moment}
         {place}
         {matching}
@@ -202,8 +205,15 @@ function Summary({
   )
 }
 
+// Where focus goes once a Show more or Try again finishes: the first new
+// row, or the results of the retried search.
+type PendingFocus =
+  | { kind: 'row'; index: number }
+  | { kind: 'results'; query: SearchQuery | null }
+
 function ResultsList({
   status,
+  query,
   resultsQuery,
   buildings,
   page,
@@ -215,6 +225,53 @@ function ResultsList({
   onLoadMore,
 }: Props) {
   const id = useId()
+  const resultsRef = useRef<HTMLDivElement>(null)
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  const retryRef = useRef<HTMLButtonElement>(null)
+  const moreRef = useRef<HTMLButtonElement>(null)
+  // Show more is disabled while it loads, and Try again goes away, so
+  // browsers drop focus to the page. Moving it on afterwards keeps keyboard
+  // and screen reader users in their place.
+  const pendingFocus = useRef<PendingFocus | null>(null)
+
+  useEffect(() => {
+    const target = pendingFocus.current
+    if (target === null) return
+    if (target.kind === 'results') {
+      // A new search replaced the retry, so focus stays where the user is.
+      if (query !== target.query) pendingFocus.current = null
+      else if (status === 'success') titleRef.current?.focus()
+      // Failed again, so the new Try again button takes focus instead.
+      else if (status === 'error') retryRef.current?.focus()
+      else return
+    } else {
+      // A new search replaced the rooms being added to.
+      if (status === 'loading') pendingFocus.current = null
+      if (status !== 'success') return
+      if (loadMoreError) {
+        // Couldn't load more: back to the button, now Try again.
+        moreRef.current?.focus()
+      } else {
+        const row = resultsRef.current?.querySelectorAll('li')[target.index]
+        if (!row) return
+        row.tabIndex = -1
+        row.focus()
+      }
+    }
+    pendingFocus.current = null
+  }, [status, query, results, loadMoreError])
+
+  function retry() {
+    // The same query is searched again; a new search would be a new object.
+    pendingFocus.current = { kind: 'results', query }
+    onRetry()
+  }
+
+  function loadMore() {
+    pendingFocus.current = { kind: 'row', index: results.length }
+    onLoadMore()
+  }
+
   if (status === 'idle') return null
 
   if (status === 'error' && error) {
@@ -223,8 +280,9 @@ function ResultsList({
         <p>{ERROR_MESSAGES[error.kind]}</p>
         <button
           type="button"
+          ref={retryRef}
           className={styles.secondaryButton}
-          onClick={onRetry}
+          onClick={retry}
         >
           Try again
         </button>
@@ -245,11 +303,13 @@ function ResultsList({
 
   return (
     <div
+      ref={resultsRef}
       className={loading ? `${styles.results} ${styles.stale}` : styles.results}
       aria-busy={loading}
     >
       <div className={styles.summary} aria-live="polite">
         <Summary
+          titleRef={titleRef}
           when={resultsQuery.when}
           minimumMinutes={resultsQuery.minimumMinutes}
           buildingName={buildingName(buildings, resultsQuery.buildingId)}
@@ -280,9 +340,10 @@ function ResultsList({
             </p>
           )}
           <button
+            ref={moreRef}
             type="button"
             className={styles.secondaryButton}
-            onClick={onLoadMore}
+            onClick={loadMore}
             disabled={loadingMore || loading}
           >
             {loadingMore

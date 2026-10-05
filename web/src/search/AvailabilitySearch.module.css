@@ -145,10 +145,18 @@
 }
 
 .groupLink {
+  position: relative;
   margin-left: auto;
   font-size: 0.9375rem;
   font-weight: 600;
   color: var(--accent);
+}
+
+/* A 44px-tall tap target around the text, without changing the layout. */
+.groupLink::after {
+  content: '';
+  position: absolute;
+  inset: calc(50% - 1.375rem) calc(-1 * var(--space-2));
 }
 
 .list {
@@ -170,6 +178,12 @@
 
 .row + .row {
   border-top: 1px solid var(--border);
+}
+
+/* A row takes focus after Show more. The list clips overflow, so the ring
+   goes inside the row. */
+.row:focus-visible {
+  outline-offset: -2px;
 }
 
 .rowMain {

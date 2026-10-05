@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AvailabilityPage, AvailabilityResult } from '../api/availability'
 import type { Building } from '../api/buildings'
+import { expectNoAxeViolations } from '../test/axe'
 import AvailabilitySearch from './AvailabilitySearch'
 
 function room(id: number, overrides: Partial<AvailabilityResult> = {}) {
@@ -622,7 +623,7 @@ describe('AvailabilitySearch', () => {
       render(<AvailabilitySearch termId={3} />)
 
       const link = await screen.findByRole('link', {
-        name: 'Directions to Evans',
+        name: 'Directions to Evans (opens in a new tab)',
       })
       const url = new URL(link.getAttribute('href') ?? '')
       expect(url.origin + url.pathname).toBe('https://www.google.com/maps/dir/')
@@ -1112,5 +1113,233 @@ describe('AvailabilitySearch', () => {
       "Search isn't set up yet",
     )
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  // GAR-038: Show more and Try again go away once they've done their job, so
+  // focus moves on rather than dropping to the page.
+  describe('focus', () => {
+    it('moves to the first new room after Show more', async () => {
+      const user = userEvent.setup()
+      stubResponses(
+        () => jsonResponse(page([room(1), room(2)], { total: 5 })),
+        () => jsonResponse(page([room(3), room(4)], { total: 5, offset: 2 })),
+        () => jsonResponse(page([room(5)], { total: 5, offset: 4 })),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByText('Showing 2 of 5')
+
+      await user.click(screen.getByRole('button', { name: 'Show more' }))
+      await waitFor(() =>
+        expect(screen.getAllByRole('listitem')[2]).toHaveFocus(),
+      )
+      expect(document.activeElement).toHaveTextContent('Room 203')
+
+      // The last page removes the button, and focus still lands on a room.
+      await user.click(screen.getByRole('button', { name: 'Show more' }))
+      await waitFor(() =>
+        expect(screen.getAllByRole('listitem')[4]).toHaveFocus(),
+      )
+      expect(
+        screen.queryByRole('button', { name: 'Show more' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it("returns to the button when more rooms can't load", async () => {
+      const user = userEvent.setup()
+      let respond: (response: Response) => void = () => {}
+      stubResponses(
+        () => jsonResponse(page([room(1)], { total: 2 })),
+        () => new Promise<Response>((resolve) => (respond = resolve)),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByText('Showing 1 of 2')
+
+      await user.click(screen.getByRole('button', { name: 'Show more' }))
+      const button = screen.getByRole('button', { name: 'Loading…' })
+      expect(button).toBeDisabled()
+      // Browsers move focus off a button once it's disabled. jsdom doesn't,
+      // and its blur() ignores disabled elements, so park focus on an element
+      // and remove it, which leaves focus on the page.
+      const parked = document.createElement('div')
+      parked.tabIndex = -1
+      document.body.append(parked)
+      parked.focus()
+      parked.remove()
+      expect(document.body).toHaveFocus()
+      respond(jsonResponse({}, 503))
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Try again' })).toHaveFocus(),
+      )
+    })
+
+    it('moves to the results after Try again', async () => {
+      const user = userEvent.setup()
+      stubResponses(
+        () => jsonResponse({}, 503),
+        () => jsonResponse({}, 503),
+        () => jsonResponse(page([room(1)])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+
+      await user.click(await screen.findByRole('button', { name: 'Try again' }))
+      // Failed again: the new Try again button takes focus.
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Try again' })).toHaveFocus(),
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Try again' }))
+      const heading = await screen.findByRole('heading', {
+        name: '1 room free now',
+      })
+      await waitFor(() => expect(heading).toHaveFocus())
+    })
+
+    it("doesn't move focus when a filter changes during Try again", async () => {
+      const user = userEvent.setup()
+      let respond: (response: Response) => void = () => {}
+      stubResponses(
+        () => jsonResponse({}, 503),
+        () => new Promise<Response>(() => {}),
+        () => new Promise<Response>((resolve) => (respond = resolve)),
+      )
+      render(<AvailabilitySearch termId={3} />)
+
+      await user.click(await screen.findByRole('button', { name: 'Try again' }))
+      // A new search replaces the retry before it finishes.
+      const option = screen.getByRole('radio', { name: nbsp('30 min') })
+      await user.click(option)
+      respond(jsonResponse(page([room(1)])))
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      expect(option).toHaveFocus()
+    })
+
+    it('stays on a filter when it changes the results', async () => {
+      const user = userEvent.setup()
+      stubResponses(
+        () => jsonResponse(page([room(1)])),
+        () => jsonResponse(page([room(1), room(2)])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      const option = screen.getByRole('radio', { name: nbsp('30 min') })
+      await user.click(option)
+      await screen.findByRole('heading', { name: '2 rooms free now' })
+
+      expect(option).toHaveFocus()
+    })
+  })
+
+  // GAR-038: each state passes axe. The component is rendered without the
+  // page's landmarks, so the region rule is left to the landing page test.
+  describe('accessibility', () => {
+    const check = () => expectNoAxeViolations(document.body, { region: false })
+    const LOCATED_BUILDINGS = () =>
+      jsonResponse({
+        results: [
+          { ...BUILDINGS[0], latitude: 37.87073, longitude: -122.26074 },
+          { ...BUILDINGS[1], latitude: 37.87362, longitude: -122.25768 },
+        ],
+      })
+    const evans = (id: number, overrides: Partial<AvailabilityResult> = {}) =>
+      room(id, {
+        building_id: 2,
+        building_code: 'EVANS',
+        building_name: 'Evans',
+        ...overrides,
+      })
+
+    it('while the first search loads', async () => {
+      stubResponses(() => new Promise<Response>(() => {}))
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('combobox', { name: 'Building' })
+
+      await check()
+    })
+
+    it('with results in groups, directions and Show more', async () => {
+      stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [
+          () => jsonResponse(page([room(1), room(2), evans(3)], { total: 60 })),
+        ],
+      })
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('link', { name: /Directions to Evans/ })
+      await screen.findByRole('button', { name: 'Show more' })
+
+      await check()
+    })
+
+    it('with no results', async () => {
+      stubResponses(() => jsonResponse(page([])))
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: 'No rooms free now' })
+
+      await check()
+    })
+
+    it('with an error', async () => {
+      stubResponses(() => jsonResponse({}, 503))
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('button', { name: 'Try again' })
+
+      await check()
+    })
+
+    it('when searching a later time', async () => {
+      const user = userEvent.setup()
+      stubResponses(() => jsonResponse(page([room(1)])))
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.click(screen.getByRole('radio', { name: 'Later' }))
+      expect(screen.getByLabelText('Date and time')).toBeInTheDocument()
+
+      await check()
+    })
+
+    it('when sorted by nearest', async () => {
+      const user = userEvent.setup()
+      stubGeolocation({ latitude: 37.87362, longitude: -122.25768 })
+      stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [
+          () => jsonResponse(page([room(1), evans(2)])),
+          () =>
+            jsonResponse(
+              page([
+                evans(2, { distance_meters: 3 }),
+                room(1, { distance_meters: 416 }),
+              ]),
+            ),
+        ],
+      })
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '2 rooms free now' })
+
+      await user.click(await screen.findByRole('radio', { name: 'Nearest' }))
+      await screen.findByText('For at least an hour · Nearest first')
+
+      await check()
+    })
+
+    it("when the location can't be found", async () => {
+      const user = userEvent.setup()
+      stubGeolocation('denied')
+      stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [() => jsonResponse(page([room(1)]))],
+      })
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.click(await screen.findByRole('radio', { name: 'Nearest' }))
+      await screen.findByText(/Couldn't get your location/)
+
+      await check()
+    })
   })
 })
