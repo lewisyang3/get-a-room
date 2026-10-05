@@ -523,6 +523,222 @@ describe('AvailabilitySearch', () => {
     )
   })
 
+  describe('room or building search', () => {
+    const searchField = () =>
+      screen.getByRole('searchbox', { name: 'Room or building' })
+
+    it('searches once typing pauses', async () => {
+      const user = userEvent.setup()
+      const fetchMock = stubResponses(
+        () => jsonResponse(page([room(1), room(42)])),
+        () => jsonResponse(page([room(42)])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '2 rooms free now' })
+
+      await user.type(searchField(), 'Dwinelle 242')
+
+      expect(
+        await screen.findByRole('heading', {
+          name: '1 room free now matching “Dwinelle 242”',
+        }),
+      ).toBeInTheDocument()
+      // One search for the whole text, not one per keystroke.
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      const url = requestedUrl(fetchMock, 1)
+      expect(url.searchParams.get('building')).toBe('Dwinelle')
+      expect(url.searchParams.get('room')).toBe('242')
+    })
+
+    it.each([
+      ['242', { room: '242', building: null }],
+      ['dwin', { room: null, building: 'dwin' }],
+    ])('reads %s', async (text, expected) => {
+      const user = userEvent.setup()
+      const fetchMock = stubResponses(
+        () => jsonResponse(page([room(1)])),
+        () => jsonResponse(page([room(1)])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.type(searchField(), text)
+
+      await screen.findByRole('heading', { name: /matching/ })
+      const url = requestedUrl(fetchMock, 1)
+      expect(url.searchParams.get('room')).toBe(expected.room)
+      expect(url.searchParams.get('building')).toBe(expected.building)
+    })
+
+    it('applies together with the other filters and a submitted time', async () => {
+      const user = userEvent.setup()
+      const later = { date: '2026-10-06', time: '09:00' }
+      const fetchMock = stubResponses(
+        () => jsonResponse(page([room(1)])),
+        () => jsonResponse(page([room(1)], later)),
+        () => jsonResponse(page([room(1)], later)),
+        () => jsonResponse(page([room(1)], later)),
+        () => jsonResponse(page([], later)),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.click(screen.getByRole('radio', { name: 'Later' }))
+      const input = screen.getByLabelText('Date and time')
+      await user.clear(input)
+      await user.type(input, '2026-10-06T09:00')
+      await user.click(screen.getByRole('button', { name: 'Find rooms' }))
+      await screen.findByRole('heading', { name: /^1 room free at/ })
+      await user.click(screen.getByRole('radio', { name: nbsp('2 h') }))
+      await user.selectOptions(
+        await screen.findByRole('combobox', { name: 'Building' }),
+        'Evans',
+      )
+      await screen.findByRole('heading', { name: /in Evans$/ })
+      await user.type(searchField(), '101')
+
+      expect(
+        await screen.findByRole('heading', {
+          name: `No rooms free at Tue, Oct 6, ${nbsp('9:00 AM')} in Evans matching “101”`,
+        }),
+      ).toBeInTheDocument()
+      const url = requestedUrl(fetchMock, 4)
+      expect(url.searchParams.get('at')).toBe('2026-10-06T09:00')
+      expect(url.searchParams.get('minimum_minutes')).toBe('120')
+      expect(url.searchParams.get('building_id')).toBe('2')
+      expect(url.searchParams.get('room')).toBe('101')
+    })
+
+    it('searches right away on Enter', async () => {
+      const user = userEvent.setup()
+      const fetchMock = stubResponses(
+        () => jsonResponse(page([room(1)])),
+        () => jsonResponse(page([room(1)])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.type(searchField(), '  Evans {Enter}')
+
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(requestedUrl(fetchMock, 1).searchParams.get('building')).toBe(
+        'Evans',
+      )
+      await screen.findByRole('heading', {
+        name: '1 room free now matching “Evans”',
+      })
+      // The pause after typing has nothing left to apply.
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('shows every room again when cleared', async () => {
+      const user = userEvent.setup()
+      const fetchMock = stubResponses(
+        () => jsonResponse(page([room(1), room(2)])),
+        () => jsonResponse(page([room(2)])),
+        () => jsonResponse(page([room(1), room(2)])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '2 rooms free now' })
+      await user.type(searchField(), '202')
+      await screen.findByRole('heading', { name: /matching “202”/ })
+
+      await user.clear(searchField())
+
+      expect(
+        await screen.findByRole('heading', { name: '2 rooms free now' }),
+      ).toBeInTheDocument()
+      const url = requestedUrl(fetchMock, 2)
+      expect(url.searchParams.has('room')).toBe(false)
+      expect(url.searchParams.has('building')).toBe(false)
+    })
+
+    it('says when nothing matches', async () => {
+      const user = userEvent.setup()
+      stubResponses(
+        () => jsonResponse(page([room(1)])),
+        () => jsonResponse(page([])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.type(searchField(), 'Dwinelle 999')
+
+      expect(
+        await screen.findByRole('heading', {
+          name: 'No rooms free now matching “Dwinelle 999”',
+        }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText(
+          /^No free room matches “Dwinelle 999” for at least an hour now\. Check the room number/,
+        ),
+      ).toBeInTheDocument()
+    })
+
+    it('describes the shown results while a new search loads', async () => {
+      const user = userEvent.setup()
+      let respond: (response: Response) => void = () => {}
+      stubResponses(
+        () => jsonResponse(page([room(1)])),
+        () => jsonResponse(page([room(1)])),
+        () => new Promise<Response>((resolve) => (respond = resolve)),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+      await user.type(searchField(), 'Dwinelle')
+      await screen.findByRole('heading', {
+        name: '1 room free now matching “Dwinelle”',
+      })
+
+      await user.type(searchField(), ' 201')
+      await waitFor(() =>
+        expect(
+          screen.getByRole('heading').closest('[aria-busy]'),
+        ).toHaveAttribute('aria-busy', 'true'),
+      )
+      expect(
+        screen.getByRole('heading', {
+          name: '1 room free now matching “Dwinelle”',
+        }),
+      ).toBeInTheDocument()
+
+      respond(jsonResponse(page([room(1)])))
+      expect(
+        await screen.findByRole('heading', {
+          name: '1 room free now matching “Dwinelle 201”',
+        }),
+      ).toBeInTheDocument()
+    })
+
+    it('keeps the search when showing more and trying again', async () => {
+      const user = userEvent.setup()
+      const fetchMock = stubResponses(
+        () => jsonResponse(page([room(1)])),
+        () => jsonResponse({}, 503),
+        () => jsonResponse(page([room(1), room(2)], { total: 3 })),
+        () => jsonResponse(page([room(3)], { total: 3, offset: 2 })),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.type(searchField(), 'dwin')
+      await screen.findByRole('alert')
+      await user.click(screen.getByRole('button', { name: 'Try again' }))
+      await screen.findByText('Showing 2 of 3')
+      await user.click(screen.getByRole('button', { name: 'Show more' }))
+      await screen.findByText('Dwinelle 203')
+
+      expect(requestedUrl(fetchMock, 2).searchParams.get('building')).toBe(
+        'dwin',
+      )
+      expect(requestedUrl(fetchMock, 3).searchParams.get('building')).toBe(
+        'dwin',
+      )
+    })
+  })
+
   it.each([
     [
       'a failed connection',

@@ -32,10 +32,16 @@ const NOW: SearchQuery = {
   when: { kind: 'now' },
   minimumMinutes: 60,
   buildingId: null,
+  text: '',
 }
 
 function at(value: string, minimumMinutes = 60): SearchQuery {
-  return { when: { kind: 'at', at: value }, minimumMinutes, buildingId: null }
+  return {
+    when: { kind: 'at', at: value },
+    minimumMinutes,
+    buildingId: null,
+    text: '',
+  }
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -203,6 +209,7 @@ describe('useAvailability', () => {
       when: { kind: 'now' },
       minimumMinutes: 120,
       buildingId: 4,
+      text: 'Dwinelle 242',
     }
 
     act(() => {
@@ -215,6 +222,8 @@ describe('useAvailability', () => {
     const more = new URL(pending[1].url)
     expect(more.searchParams.get('minimum_minutes')).toBe('120')
     expect(more.searchParams.get('building_id')).toBe('4')
+    expect(more.searchParams.get('building')).toBe('Dwinelle')
+    expect(more.searchParams.get('room')).toBe('242')
     expect(more.searchParams.get('at')).toBe('2026-10-05T14:30')
 
     await act(async () => pending[1].resolve(jsonResponse({}, 500)))
@@ -227,6 +236,8 @@ describe('useAvailability', () => {
     const retried = new URL(pending[3].url)
     expect(retried.searchParams.get('minimum_minutes')).toBe('120')
     expect(retried.searchParams.get('building_id')).toBe('4')
+    expect(retried.searchParams.get('building')).toBe('Dwinelle')
+    expect(retried.searchParams.get('room')).toBe('242')
   })
 
   it('skips rooms already listed when appending a page', async () => {

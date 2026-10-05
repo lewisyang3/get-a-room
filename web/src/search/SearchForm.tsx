@@ -13,6 +13,9 @@ type Props = {
   buildings: Building[] | null
   buildingId: number | null
   onBuildingChange: (buildingId: number | null) => void
+  /** The room or building search, as typed. */
+  text: string
+  onTextChange: (text: string) => void
 }
 
 type Mode = 'now' | 'later'
@@ -33,6 +36,8 @@ function SearchForm({
   buildings,
   buildingId,
   onBuildingChange,
+  text,
+  onTextChange,
 }: Props) {
   const [mode, setMode] = useState<Mode>('now')
   const [at, setAt] = useState(() => nextHalfHourInPacific(new Date()))
@@ -40,6 +45,7 @@ function SearchForm({
   const hintId = `${id}-hint`
   const atId = `${id}-at`
   const buildingSelectId = `${id}-building`
+  const textId = `${id}-text`
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -109,6 +115,22 @@ function SearchForm({
           </select>
         </div>
       )}
+      <div className={`${styles.field} ${styles.fullRow}`}>
+        <label htmlFor={textId} className={styles.legend}>
+          Room or building
+        </label>
+        <input
+          id={textId}
+          className={styles.searchInput}
+          type="search"
+          placeholder="e.g. Dwinelle 242"
+          enterKeyHint="search"
+          autoComplete="off"
+          spellCheck={false}
+          value={text}
+          onChange={(event) => onTextChange(event.target.value)}
+        />
+      </div>
       <p id={hintId} className={styles.hint}>
         Pacific time · 7&nbsp;a.m. to 10&nbsp;p.m.
       </p>

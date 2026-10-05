@@ -6,13 +6,21 @@ import {
   type SearchWhen,
 } from '../api/availability'
 import { ApiError } from '../api/http'
+import { parseRoomSearch } from './roomSearch'
 
-/** What to search for: when, how long a room must stay free, and which
- * building (null for every building). */
+/** What to search for: when, how long a room must stay free, which
+ * building (null for every building), and the room or building search text
+ * (normalized, and empty for none). */
 export type SearchQuery = {
   when: SearchWhen
   minimumMinutes: number
   buildingId: number | null
+  text: string
+}
+
+// The API parameters for a query's filters.
+function requestFor({ minimumMinutes, buildingId, text }: SearchQuery) {
+  return { minimumMinutes, buildingId, ...parseRoomSearch(text) }
 }
 
 export type AvailabilityState = {
@@ -101,7 +109,12 @@ export function useAvailability(termId: number) {
         loadMoreError: null,
       }))
       try {
-        const page = await fetchAvailability({ termId, ...query, signal })
+        const page = await fetchAvailability({
+          termId,
+          when: query.when,
+          ...requestFor(query),
+          signal,
+        })
         if (signal.aborted) return
         setState({
           ...INITIAL_STATE,
@@ -137,7 +150,6 @@ export function useAvailability(termId: number) {
     // "now" is worked out from the API's clock on every request, so asking
     // for it again could page through a different minute's rooms. Later pages
     // ask for the exact moment the first page was computed for.
-    const { minimumMinutes, buildingId } = state.resultsQuery
     const when = pinnedSearch(state.resultsQuery.when, state.page)
     const offset = state.results.length
     const signal = restart()
@@ -150,8 +162,7 @@ export function useAvailability(termId: number) {
       const page = await fetchAvailability({
         termId,
         when,
-        minimumMinutes,
-        buildingId,
+        ...requestFor(state.resultsQuery),
         offset,
         signal,
       })
