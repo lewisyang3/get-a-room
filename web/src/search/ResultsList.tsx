@@ -70,27 +70,39 @@ function Summary({
   when,
   minimumMinutes,
   buildingName,
+  text,
   page,
 }: {
   when: SearchWhen
   minimumMinutes: number
   buildingName: string | null
+  text: string
   page: AvailabilityPage
 }) {
   const moment = formatSearchMoment(when, page)
   const minimum = formatMinimumDuration(minimumMinutes)
   const place = buildingName ? ` in ${buildingName}` : ''
+  const quoted = `“${text}”`
+  const matching = text ? ` matching ${quoted}` : ''
   if (page.total === 0) {
     return (
       <>
         <h2 className={styles.summaryTitle}>
           No rooms free {moment}
           {place}
+          {matching}
         </h2>
-        <p className={styles.secondary}>
-          Nothing{place} is free for at least {minimum} {moment}. Availability
-          covers 7&nbsp;a.m. to 10&nbsp;p.m. on days during the term.
-        </p>
+        {text ? (
+          <p className={styles.secondary}>
+            No free room{place} matches {quoted} for at least {minimum} {moment}
+            . Check the room number, or try part of the building name.
+          </p>
+        ) : (
+          <p className={styles.secondary}>
+            Nothing{place} is free for at least {minimum} {moment}. Availability
+            covers 7&nbsp;a.m. to 10&nbsp;p.m. on days during the term.
+          </p>
+        )}
       </>
     )
   }
@@ -99,6 +111,7 @@ function Summary({
       <h2 className={styles.summaryTitle}>
         {roomCount(page.total)} free {moment}
         {place}
+        {matching}
       </h2>
       <p className={styles.secondary}>For at least {minimum}</p>
     </>
@@ -155,6 +168,7 @@ function ResultsList({
           when={resultsQuery.when}
           minimumMinutes={resultsQuery.minimumMinutes}
           buildingName={buildingName(buildings, resultsQuery.buildingId)}
+          text={resultsQuery.text}
           page={page}
         />
       </div>

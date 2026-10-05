@@ -37,7 +37,8 @@
 }
 
 .dateTime,
-.select {
+.select,
+.searchInput {
   min-height: 2.75rem;
   padding: 0 var(--space-3);
   font: inherit;
