@@ -105,3 +105,57 @@ def test_ind_section_has_no_meetings():
     assert section.meetings == []
     assert section.building_name is None
     assert section.room_number is None
+
+
+def test_lec_meeting_three_days():
+    section = parse_section(_load("lec_three_days.html"), slug="lec-three-days")
+
+    assert section.section_type == "LEC"
+    assert section.building_name == "Evans"
+    assert section.room_number == "35"
+    assert section.meetings == [
+        ParsedMeeting(day_of_week=0, start_time=time(11, 0), end_time=time(12, 0)),
+        ParsedMeeting(day_of_week=2, start_time=time(11, 0), end_time=time(12, 0)),
+        ParsedMeeting(day_of_week=4, start_time=time(11, 0), end_time=time(12, 0)),
+    ]
+
+
+def test_grp_with_two_meeting_blocks_keeps_each_blocks_time():
+    section = parse_section(
+        _load("grp_two_meeting_blocks.html"), slug="grp-two-meeting-blocks"
+    )
+
+    assert section.section_type == "GRP"
+    assert section.building_name == "Soda"
+    assert section.room_number == "306"
+    assert section.meetings == [
+        ParsedMeeting(day_of_week=0, start_time=time(12, 0), end_time=time(14, 0)),
+        ParsedMeeting(day_of_week=4, start_time=time(11, 30), end_time=time(12, 30)),
+    ]
+
+
+def test_online_lec_has_meetings_but_no_room():
+    section = parse_section(_load("lec_online.html"), slug="lec-online")
+
+    assert section.section_type == "LEC"
+    assert section.building_name is None
+    assert section.room_number is None
+    assert section.location_raw == "Internet/Online"
+    assert section.meetings == [
+        ParsedMeeting(day_of_week=1, start_time=time(11, 0), end_time=time(12, 30)),
+        ParsedMeeting(day_of_week=3, start_time=time(11, 0), end_time=time(12, 30)),
+    ]
+
+
+def test_location_without_a_room_number_keeps_the_raw_text():
+    section = parse_section(
+        _load("lec_unparseable_location.html"), slug="lec-unparseable-location"
+    )
+
+    assert section.section_type == "LEC"
+    assert section.building_name is None
+    assert section.room_number is None
+    assert section.location_raw == "GTU Student Services Center"
+    assert section.meetings == [
+        ParsedMeeting(day_of_week=2, start_time=time(12, 30), end_time=time(14, 0)),
+    ]
