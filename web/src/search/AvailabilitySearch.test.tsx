@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AvailabilityPage, AvailabilityResult } from '../api/availability'
+import type { Building } from '../api/buildings'
 import AvailabilitySearch from './AvailabilitySearch'
 
 function room(id: number, overrides: Partial<AvailabilityResult> = {}) {
@@ -39,15 +40,57 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status })
 }
 
-/** Stubs fetch to answer each request in turn with the given responses. */
-function stubResponses(...responses: (() => Response | Promise<Response>)[]) {
-  const fetchMock = vi.fn(async () => {
-    const next = responses.shift()
+type Respond = () => Response | Promise<Response>
+
+const BUILDINGS: Building[] = [
+  {
+    building_id: 1,
+    building_code: 'DWINELLE',
+    building_name: 'Dwinelle',
+    latitude: null,
+    longitude: null,
+  },
+  {
+    building_id: 2,
+    building_code: 'EVANS',
+    building_name: 'Evans',
+    latitude: null,
+    longitude: null,
+  },
+]
+
+/** Stubs fetch by endpoint. /buildings answers with `buildings`, and each
+ * /availability request takes the next of `availability` in turn. Returns a
+ * mock that records only the /availability requests. */
+function stubApi({
+  buildings = () => jsonResponse({ results: BUILDINGS }),
+  availability,
+}: {
+  buildings?: Respond
+  availability: Respond[]
+}) {
+  // Takes the URL so tests can read it from mock.calls.
+  const availabilityMock = vi.fn(async (_url: string) => {
+    const next = availability.shift()
     if (!next) throw new Error('Unexpected request')
     return next()
   })
-  vi.stubGlobal('fetch', fetchMock)
-  return fetchMock
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const { pathname } = new URL(url)
+      if (pathname === '/buildings') return buildings()
+      if (pathname === '/availability') return availabilityMock(url)
+      throw new Error(`Unexpected request to ${pathname}`)
+    }),
+  )
+  return availabilityMock
+}
+
+/** Stubs fetch with the default buildings and these /availability
+ * responses, in turn. */
+function stubResponses(...responses: Respond[]) {
+  return stubApi({ availability: responses })
 }
 
 function requestedUrl(fetchMock: ReturnType<typeof vi.fn>, call: number) {
@@ -343,12 +386,12 @@ describe('AvailabilitySearch', () => {
   })
 
   it("doesn't search when no term is configured", () => {
-    const fetchMock = stubResponses()
+    stubResponses()
     render(<AvailabilitySearch termId={null} />)
 
     expect(screen.getByRole('status')).toHaveTextContent(
       "Search isn't set up yet",
     )
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
   })
 })
