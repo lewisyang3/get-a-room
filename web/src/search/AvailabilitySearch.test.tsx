@@ -1144,19 +1144,33 @@ describe('AvailabilitySearch', () => {
       ).not.toBeInTheDocument()
     })
 
-    it("stays on the button when more rooms can't load", async () => {
+    it("returns to the button when more rooms can't load", async () => {
       const user = userEvent.setup()
+      let respond: (response: Response) => void = () => {}
       stubResponses(
         () => jsonResponse(page([room(1)], { total: 2 })),
-        () => jsonResponse({}, 503),
+        () => new Promise<Response>((resolve) => (respond = resolve)),
       )
       render(<AvailabilitySearch termId={3} />)
       await screen.findByText('Showing 1 of 2')
 
       await user.click(screen.getByRole('button', { name: 'Show more' }))
+      const button = screen.getByRole('button', { name: 'Loading…' })
+      expect(button).toBeDisabled()
+      // Browsers move focus off a button once it's disabled. jsdom doesn't,
+      // and its blur() ignores disabled elements, so park focus on an element
+      // and remove it, which leaves focus on the page.
+      const parked = document.createElement('div')
+      parked.tabIndex = -1
+      document.body.append(parked)
+      parked.focus()
+      parked.remove()
+      expect(document.body).toHaveFocus()
+      respond(jsonResponse({}, 503))
 
-      const button = await screen.findByRole('button', { name: 'Try again' })
-      expect(button).toHaveFocus()
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Try again' })).toHaveFocus(),
+      )
     })
 
     it('moves to the results after Try again', async () => {
@@ -1179,6 +1193,26 @@ describe('AvailabilitySearch', () => {
         name: '1 room free now',
       })
       await waitFor(() => expect(heading).toHaveFocus())
+    })
+
+    it("doesn't move focus when a filter changes during Try again", async () => {
+      const user = userEvent.setup()
+      let respond: (response: Response) => void = () => {}
+      stubResponses(
+        () => jsonResponse({}, 503),
+        () => new Promise<Response>(() => {}),
+        () => new Promise<Response>((resolve) => (respond = resolve)),
+      )
+      render(<AvailabilitySearch termId={3} />)
+
+      await user.click(await screen.findByRole('button', { name: 'Try again' }))
+      // A new search replaces the retry before it finishes.
+      const option = screen.getByRole('radio', { name: nbsp('30 min') })
+      await user.click(option)
+      respond(jsonResponse(page([room(1)])))
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      expect(option).toHaveFocus()
     })
 
     it('stays on a filter when it changes the results', async () => {
