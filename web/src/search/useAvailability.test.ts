@@ -28,10 +28,14 @@ function page(ids: number[], total = ids.length, offset = 0): AvailabilityPage {
   }
 }
 
-const NOW: SearchQuery = { when: { kind: 'now' }, minimumMinutes: 60 }
+const NOW: SearchQuery = {
+  when: { kind: 'now' },
+  minimumMinutes: 60,
+  buildingId: null,
+}
 
 function at(value: string, minimumMinutes = 60): SearchQuery {
-  return { when: { kind: 'at', at: value }, minimumMinutes }
+  return { when: { kind: 'at', at: value }, minimumMinutes, buildingId: null }
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -192,10 +196,14 @@ describe('useAvailability', () => {
     expect(result.current.query).toEqual(NOW)
   })
 
-  it('keeps the minimum duration when loading more and retrying', async () => {
+  it('keeps the filters when loading more and retrying', async () => {
     const { pending } = controlledFetch()
     const { result } = renderHook(() => useAvailability(3))
-    const query: SearchQuery = { when: { kind: 'now' }, minimumMinutes: 120 }
+    const query: SearchQuery = {
+      when: { kind: 'now' },
+      minimumMinutes: 120,
+      buildingId: 4,
+    }
 
     act(() => {
       void result.current.search(query)
@@ -206,6 +214,7 @@ describe('useAvailability', () => {
     })
     const more = new URL(pending[1].url)
     expect(more.searchParams.get('minimum_minutes')).toBe('120')
+    expect(more.searchParams.get('building_id')).toBe('4')
     expect(more.searchParams.get('at')).toBe('2026-10-05T14:30')
 
     await act(async () => pending[1].resolve(jsonResponse({}, 500)))
@@ -215,9 +224,9 @@ describe('useAvailability', () => {
     await act(async () => pending[2].resolve(jsonResponse({}, 503)))
     act(() => result.current.retry())
 
-    expect(new URL(pending[3].url).searchParams.get('minimum_minutes')).toBe(
-      '120',
-    )
+    const retried = new URL(pending[3].url)
+    expect(retried.searchParams.get('minimum_minutes')).toBe('120')
+    expect(retried.searchParams.get('building_id')).toBe('4')
   })
 
   it('skips rooms already listed when appending a page', async () => {

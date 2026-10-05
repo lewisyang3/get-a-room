@@ -18,6 +18,7 @@ function Search({ termId }: { termId: number }) {
     void search({
       when: query?.when ?? { kind: 'now' },
       minimumMinutes: minutes,
+      buildingId: null,
     })
   }
 
@@ -26,13 +27,16 @@ function Search({ termId }: { termId: number }) {
     void search({
       when: { kind: 'now' },
       minimumMinutes: DEFAULT_MINIMUM_MINUTES,
+      buildingId: null,
     })
   }, [search])
 
   return (
     <section className={styles.search} aria-label="Find a room">
       <SearchForm
-        onSearch={(when) => void search({ when, minimumMinutes })}
+        onSearch={(when) =>
+          void search({ when, minimumMinutes, buildingId: null })
+        }
         minimumMinutes={minimumMinutes}
         onMinimumMinutesChange={changeMinimumMinutes}
       />

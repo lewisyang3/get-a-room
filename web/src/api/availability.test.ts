@@ -61,6 +61,7 @@ describe('availabilityUrl', () => {
         termId: 3,
         when: { kind: 'now' },
         minimumMinutes: 60,
+        buildingId: null,
         baseUrl: 'http://api.test',
       }),
     )
@@ -74,12 +75,13 @@ describe('availabilityUrl', () => {
     })
   })
 
-  it('passes a later time as at, with the minimum and paging', () => {
+  it('passes a later time as at, with the filters and paging', () => {
     const url = new URL(
       availabilityUrl({
         termId: 3,
         when: { kind: 'at', at: '2026-10-05T14:30' },
         minimumMinutes: 120,
+        buildingId: 4,
         offset: 50,
         baseUrl: 'http://api.test',
       }),
@@ -87,6 +89,7 @@ describe('availabilityUrl', () => {
 
     expect(url.searchParams.get('at')).toBe('2026-10-05T14:30')
     expect(url.searchParams.get('minimum_minutes')).toBe('120')
+    expect(url.searchParams.get('building_id')).toBe('4')
     expect(url.searchParams.get('offset')).toBe('50')
   })
 })
@@ -96,6 +99,7 @@ describe('fetchAvailability', () => {
     termId: 3,
     when: { kind: 'now' } as const,
     minimumMinutes: 60,
+    buildingId: null,
   }
 
   it('returns the page', async () => {

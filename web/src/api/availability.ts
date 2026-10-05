@@ -43,6 +43,8 @@ export type AvailabilityRequest = {
   when: SearchWhen
   /** Only rooms free for at least this many minutes. */
   minimumMinutes: number
+  /** Only rooms in this building, or every building when null. */
+  buildingId: number | null
   offset?: number
   limit?: number
   signal?: AbortSignal
@@ -53,6 +55,7 @@ export function availabilityUrl({
   termId,
   when,
   minimumMinutes,
+  buildingId,
   offset = 0,
   limit = PAGE_SIZE,
   baseUrl = apiBaseUrl,
@@ -61,6 +64,7 @@ export function availabilityUrl({
   // With no time parameters the API searches right now, on its own clock.
   if (when.kind === 'at') params.set('at', when.at)
   params.set('minimum_minutes', String(minimumMinutes))
+  if (buildingId !== null) params.set('building_id', String(buildingId))
   params.set('limit', String(limit))
   params.set('offset', String(offset))
   return `${baseUrl}/availability?${params}`
