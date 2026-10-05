@@ -43,3 +43,23 @@ def test_ind_section_is_rejected_by_type():
     section = classify(_parse("ind_no_meetings.html"))
     assert not is_accepted(section)
     assert section.rejection_reason == "section_type_not_room_occupying:IND"
+
+
+def test_lec_meeting_three_days_is_accepted():
+    assert is_accepted(classify(_parse("lec_three_days.html")))
+
+
+def test_grp_with_two_meeting_blocks_is_accepted():
+    assert is_accepted(classify(_parse("grp_two_meeting_blocks.html")))
+
+
+def test_online_lec_is_rejected():
+    section = classify(_parse("lec_online.html"))
+    assert not is_accepted(section)
+    assert section.rejection_reason == "online"
+
+
+def test_location_without_a_room_number_is_rejected():
+    section = classify(_parse("lec_unparseable_location.html"))
+    assert not is_accepted(section)
+    assert section.rejection_reason == "unparseable_location"
