@@ -64,7 +64,13 @@ export type AvailabilityRequest = {
   baseUrl?: string
 }
 
-export function availabilityUrl({
+/** A search, without paging: what both /availability and
+ * /availability/buildings take. */
+export type SearchRequest = Omit<AvailabilityRequest, 'offset' | 'limit'>
+
+/** The query parameters for a search, shared by /availability and
+ * /availability/buildings. */
+export function searchParams({
   termId,
   when,
   minimumMinutes,
@@ -72,10 +78,7 @@ export function availabilityUrl({
   building,
   room,
   near,
-  offset = 0,
-  limit = PAGE_SIZE,
-  baseUrl = apiBaseUrl,
-}: AvailabilityRequest): string {
+}: SearchRequest): URLSearchParams {
   const params = new URLSearchParams({ term_id: String(termId) })
   // With no time parameters the API searches right now, on its own clock.
   if (when.kind === 'at') params.set('at', when.at)
@@ -87,6 +90,16 @@ export function availabilityUrl({
     params.set('near_latitude', String(near.latitude))
     params.set('near_longitude', String(near.longitude))
   }
+  return params
+}
+
+export function availabilityUrl({
+  offset = 0,
+  limit = PAGE_SIZE,
+  baseUrl = apiBaseUrl,
+  ...search
+}: AvailabilityRequest): string {
+  const params = searchParams(search)
   params.set('limit', String(limit))
   params.set('offset', String(offset))
   return `${baseUrl}/availability?${params}`
