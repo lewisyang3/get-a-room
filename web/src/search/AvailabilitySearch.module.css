@@ -172,6 +172,12 @@
   border-top: 1px solid var(--border);
 }
 
+/* A row takes focus after Show more. The list clips overflow, so the ring
+   goes inside the row. */
+.row:focus-visible {
+  outline-offset: -2px;
+}
+
 .rowMain {
   display: flex;
   flex-direction: column;

@@ -1115,6 +1115,89 @@ describe('AvailabilitySearch', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  // GAR-038: Show more and Try again go away once they've done their job, so
+  // focus moves on rather than dropping to the page.
+  describe('focus', () => {
+    it('moves to the first new room after Show more', async () => {
+      const user = userEvent.setup()
+      stubResponses(
+        () => jsonResponse(page([room(1), room(2)], { total: 5 })),
+        () => jsonResponse(page([room(3), room(4)], { total: 5, offset: 2 })),
+        () => jsonResponse(page([room(5)], { total: 5, offset: 4 })),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByText('Showing 2 of 5')
+
+      await user.click(screen.getByRole('button', { name: 'Show more' }))
+      await waitFor(() =>
+        expect(screen.getAllByRole('listitem')[2]).toHaveFocus(),
+      )
+      expect(document.activeElement).toHaveTextContent('Room 203')
+
+      // The last page removes the button, and focus still lands on a room.
+      await user.click(screen.getByRole('button', { name: 'Show more' }))
+      await waitFor(() =>
+        expect(screen.getAllByRole('listitem')[4]).toHaveFocus(),
+      )
+      expect(
+        screen.queryByRole('button', { name: 'Show more' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it("stays on the button when more rooms can't load", async () => {
+      const user = userEvent.setup()
+      stubResponses(
+        () => jsonResponse(page([room(1)], { total: 2 })),
+        () => jsonResponse({}, 503),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByText('Showing 1 of 2')
+
+      await user.click(screen.getByRole('button', { name: 'Show more' }))
+
+      const button = await screen.findByRole('button', { name: 'Try again' })
+      expect(button).toHaveFocus()
+    })
+
+    it('moves to the results after Try again', async () => {
+      const user = userEvent.setup()
+      stubResponses(
+        () => jsonResponse({}, 503),
+        () => jsonResponse({}, 503),
+        () => jsonResponse(page([room(1)])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+
+      await user.click(await screen.findByRole('button', { name: 'Try again' }))
+      // Failed again: the new Try again button takes focus.
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Try again' })).toHaveFocus(),
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Try again' }))
+      const heading = await screen.findByRole('heading', {
+        name: '1 room free now',
+      })
+      await waitFor(() => expect(heading).toHaveFocus())
+    })
+
+    it('stays on a filter when it changes the results', async () => {
+      const user = userEvent.setup()
+      stubResponses(
+        () => jsonResponse(page([room(1)])),
+        () => jsonResponse(page([room(1), room(2)])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      const option = screen.getByRole('radio', { name: nbsp('30 min') })
+      await user.click(option)
+      await screen.findByRole('heading', { name: '2 rooms free now' })
+
+      expect(option).toHaveFocus()
+    })
+  })
+
   // GAR-038: each state passes axe. The component is rendered without the
   // page's landmarks, so the region rule is left to the landing page test.
   describe('accessibility', () => {
