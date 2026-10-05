@@ -1,6 +1,10 @@
 /* Single readable column. The gutter never drops below 1rem and clears the
    notch and home indicator on phones. */
 .page {
+  /* At least the window's height, so the footer sits at the bottom. */
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
   max-width: 40rem;
   margin: 0 auto;
   padding-left: max(var(--space-4), env(safe-area-inset-left));
@@ -34,6 +38,7 @@
 }
 
 .main {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
@@ -51,6 +56,10 @@
   line-height: 1.4;
   color: var(--text-secondary);
   text-wrap: pretty;
+}
+
+.footer {
+  padding-top: var(--space-12);
 }
 
 .note {

@@ -18,13 +18,15 @@ function LandingPage() {
         </div>
 
         <AvailabilitySearch />
+      </main>
 
+      <footer className={styles.footer}>
         <p className={styles.note}>
           Based on the <a href="https://classes.berkeley.edu">class schedule</a>
           , not who's actually in the room. Rooms may be locked, and can't be
           reserved.
         </p>
-      </main>
+      </footer>
     </div>
   )
 }
