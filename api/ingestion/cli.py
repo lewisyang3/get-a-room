@@ -1,4 +1,4 @@
-"""Operator commands for terms and imports.
+"""Operator commands for terms, imports, and building locations.
 
 Run as `python -m ingestion.cli --help`. Exit codes:
 
@@ -19,6 +19,7 @@ import sys
 import time
 from collections.abc import Callable, Iterator, Sequence
 from datetime import date, datetime, timezone
+from pathlib import Path
 from zoneinfo import available_timezones
 
 from sqlalchemy import select
@@ -29,6 +30,11 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models.models import Term, TermStatus
 from ingestion.fetch import SectionSession, build_session
+from ingestion.locations import (
+    DEFAULT_LOCATIONS_PATH,
+    apply_locations,
+    load_locations,
+)
 from ingestion.persist import (
     PARSER_VERSION_MAX_LENGTH,
     canonical_source_url,
@@ -376,7 +382,7 @@ def _import_run(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m ingestion.cli",
-        description="Manage terms and schedule imports.",
+        description="Manage terms, schedule imports, and building locations.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -450,6 +456,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.set_defaults(handler=_import_run, needs_scraper=True)
 
+    buildings = commands.add_parser("buildings", help="manage building data")
+    buildings_commands = buildings.add_subparsers(
+        dest="buildings_command", required=True
+    )
+
+    set_locations = buildings_commands.add_parser(
+        "set-locations", help="set building coordinates from a CSV"
+    )
+    set_locations.add_argument(
+        "--file",
+        type=Path,
+        default=DEFAULT_LOCATIONS_PATH,
+        help="name,latitude,longitude CSV (default: data/building_locations.csv)",
+    )
+    set_locations.set_defaults(handler=_buildings_set_locations)
+
     return parser
 
 
@@ -478,6 +500,31 @@ def main(
     except CliError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_USAGE
+
+
+def _buildings_set_locations(args: argparse.Namespace, db: Session) -> int:
+    try:
+        locations = load_locations(args.file)
+    except OSError as exc:
+        raise CliError(f"can't read {args.file}: {exc.strerror}") from None
+    except ValueError as exc:
+        raise CliError(f"{args.file}: {exc}") from None
+
+    summary = apply_locations(db, locations)
+    db.commit()
+
+    print(
+        f"Building locations from {args.file}: {len(summary.updated)} updated, "
+        f"{len(summary.unchanged)} unchanged, "
+        f"{len(summary.unmatched)} not in the database"
+    )
+    if summary.unmatched:
+        print(f"Not in the database: {', '.join(summary.unmatched)}")
+    # Covered buildings without coordinates sort last by distance, so they're
+    # worth adding to the CSV.
+    if summary.missing:
+        print(f"Covered buildings without coordinates: {', '.join(summary.missing)}")
+    return EXIT_OK
 
 
 if __name__ == "__main__":

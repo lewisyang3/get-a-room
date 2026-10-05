@@ -147,6 +147,8 @@ curl 'http://localhost:8000/availability?term_id=1&at=2025-10-17T14:30'
 curl 'http://localhost:8000/availability?term_id=1&day_of_week=4&time=14:30&minimum_minutes=90'
 # Dwinelle 242, right now:
 curl 'http://localhost:8000/availability?term_id=1&building=dwinelle&room=242'
+# Right now, nearest to a point first:
+curl 'http://localhost:8000/availability?term_id=1&near_latitude=37.8736&near_longitude=-122.2577'
 ```
 
 Responses are one page of results:
@@ -157,7 +159,7 @@ Responses are one page of results:
  "results": [{"room_id": 7, "building_id": 2, "building_code": "DWINELLE",
               "building_name": "Dwinelle", "room_number": "242",
               "available_from": "14:30", "available_until": "17:00",
-              "available_minutes": 150}]}
+              "available_minutes": 150, "distance_meters": null}]}
 ```
 
 - Say when to search in one of three ways (combining them is a 422):
@@ -188,6 +190,12 @@ Responses are one page of results:
   A filter that matches nothing returns `total: 0`, not an error.
 - Results are sorted by building name, then room number. `limit` (default
   50, at most 200) and `offset` select a page; `total` counts every match.
+- `near_latitude` and `near_longitude`, together, sort by distance from that
+  point instead: nearest building first, buildings with no coordinates last,
+  and each building's rooms kept together. Each result's `distance_meters` is
+  the building's distance, rounded to the metre, or `null` without a point or
+  coordinates. Distances use a flat-earth approximation, within 1% across a
+  campus. Giving only one of the two is a 422.
 
 Errors are `{"detail": ...}`. An unknown term is a 404 with a message. Any
 invalid request is a 422 with a list of problems, each with a `loc` naming the
@@ -222,6 +230,32 @@ curl 'http://localhost:8000/buildings'
 - The fields match `/availability`'s, so a building's `building_id` or
   `building_code` works as the `/availability` filter of the same name.
 - A listed building can still have no free room at a given time.
+
+## Building locations
+
+Berkeley's section pages don't give building coordinates, so they're kept by
+hand in [`data/building_locations.csv`](data/building_locations.csv)
+(`name,latitude,longitude`) and applied to the database with:
+
+```bash
+python -m ingestion.cli buildings set-locations            # the repo's CSV
+python -m ingestion.cli buildings set-locations --file other.csv
+```
+
+- Names are matched the way imports key buildings, ignoring case and
+  punctuation, so use the building name as it appears in the class schedule's
+  locations (`Dwinelle`, `Valley Life Sciences`).
+- It's safe to re-run, and imports never change coordinates. Run it again
+  after an import adds buildings: it lists covered buildings that still have
+  no coordinates (they sort last by distance), and CSV names that matched no
+  building.
+- An invalid CSV changes nothing and exits 2, naming the line at fault.
+- Coordinates come from [OpenStreetMap](https://www.openstreetmap.org/)
+  (© OpenStreetMap contributors, ODbL), at each building's centroid, to 5
+  decimal places (about a metre). Barrows, Kroeber and LeConte were renamed,
+  and their names in the schedule aren't known yet, and Genetics & Plant
+  Biology had no OpenStreetMap match, so they're left out until a real import
+  shows how the schedule names them.
 
 ## Running tests and lint locally
 

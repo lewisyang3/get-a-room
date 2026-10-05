@@ -1,3 +1,4 @@
+import math
 from collections.abc import Callable, Iterator
 from datetime import datetime, time, timezone
 
@@ -133,6 +134,7 @@ def test_now_returns_rooms_free_in_the_terms_timezone(
             "available_from": "10:00",
             "available_until": "11:00",
             "available_minutes": 60,
+            "distance_meters": None,
         },
         {
             "room_id": rooms["dwinelle_242"].room_id,
@@ -143,6 +145,7 @@ def test_now_returns_rooms_free_in_the_terms_timezone(
             "available_from": "10:00",
             "available_until": "14:00",
             "available_minutes": 240,
+            "distance_meters": None,
         },
     ]
 
@@ -720,3 +723,125 @@ def test_a_weekday_and_time_search_has_no_date(
 )
 def test_invalid_at_is_rejected(client: TestClient, term: Term, params):
     _assert_invalid(_get(client, term, **params), "at")
+
+
+# --- sorting by distance (GAR-037) ---
+
+EVANS = (37.87362, -122.25768)
+DWINELLE = (37.87073, -122.26074)
+# A point just outside Evans Hall.
+NEAR_EVANS = {"near_latitude": 37.8736, "near_longitude": -122.2577}
+
+
+def _haversine_meters(a: tuple[float, float], b: tuple[float, float]) -> float:
+    lat1, lng1, lat2, lng2 = map(math.radians, (*a, *b))
+    h = (
+        math.sin((lat2 - lat1) / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin((lng2 - lng1) / 2) ** 2
+    )
+    return 2 * 6_371_000 * math.asin(math.sqrt(h))
+
+
+@pytest.fixture
+def located_rooms(db: Session, term: Term) -> None:
+    """Rooms free all Friday in buildings with and without coordinates."""
+    buildings = [
+        Building(
+            name="Dwinelle",
+            short_code="DWINELLE",
+            latitude=DWINELLE[0],
+            longitude=DWINELLE[1],
+        ),
+        Building(
+            name="Evans", short_code="EVANS", latitude=EVANS[0], longitude=EVANS[1]
+        ),
+        # The same distance as Evans, so their rooms must not interleave.
+        Building(
+            name="Evans Annex",
+            short_code="EVANS-ANNEX",
+            latitude=EVANS[0],
+            longitude=EVANS[1],
+        ),
+        Building(name="Hearst Field Annex", short_code="HFA"),
+    ]
+    db.add_all(buildings)
+    db.flush()
+    dwinelle, evans, annex, hfa = buildings
+    for building, numbers in [
+        (dwinelle, ["109", "242"]),
+        (evans, ["10", "11"]),
+        (annex, ["1", "20"]),
+        (hfa, ["B5"]),
+    ]:
+        for number in numbers:
+            _add_room(db, term, building, number, {FRIDAY: [(time(7), time(22))]})
+    db.commit()
+
+
+def test_near_sorts_nearest_first_with_unknown_locations_last(
+    client: TestClient, term: Term, located_rooms
+):
+    response = _search(client, term, **NEAR_EVANS)
+
+    assert _room_keys(response) == [
+        ("Evans", "10"),
+        ("Evans", "11"),
+        ("Evans Annex", "1"),
+        ("Evans Annex", "20"),
+        ("Dwinelle", "109"),
+        ("Dwinelle", "242"),
+        ("Hearst Field Annex", "B5"),
+    ]
+
+
+def test_near_reports_each_buildings_approximate_distance(
+    client: TestClient, term: Term, located_rooms
+):
+    point = (NEAR_EVANS["near_latitude"], NEAR_EVANS["near_longitude"])
+    distances = {
+        r["building_name"]: r["distance_meters"]
+        for r in _results(_search(client, term, **NEAR_EVANS))
+    }
+
+    assert distances["Hearst Field Annex"] is None
+    for name, location in [("Evans", EVANS), ("Dwinelle", DWINELLE)]:
+        assert isinstance(distances[name], int)
+        assert distances[name] == pytest.approx(
+            _haversine_meters(point, location), rel=0.01, abs=1
+        )
+
+
+def test_near_pages_stay_in_order(client: TestClient, term: Term, located_rooms):
+    everything = _room_keys(_search(client, term, **NEAR_EVANS))
+
+    pages = [
+        _room_keys(_search(client, term, limit=3, offset=offset, **NEAR_EVANS))
+        for offset in (0, 3, 6)
+    ]
+
+    assert [key for page in pages for key in page] == everything
+
+
+def test_without_near_the_order_and_distances_are_unchanged(
+    client: TestClient, term: Term, located_rooms
+):
+    response = _search(client, term)
+
+    assert _room_keys(response)[:2] == [("Dwinelle", "109"), ("Dwinelle", "242")]
+    assert {r["distance_meters"] for r in _results(response)} == {None}
+
+
+@pytest.mark.parametrize(
+    ("params", "blamed"),
+    [
+        ({"near_latitude": 37.87}, "near_longitude"),
+        ({"near_longitude": -122.26}, "near_latitude"),
+        ({"near_latitude": 91, "near_longitude": 0}, "near_latitude"),
+        ({"near_latitude": 0, "near_longitude": -181}, "near_longitude"),
+        ({"near_latitude": "north", "near_longitude": 0}, "near_latitude"),
+    ],
+)
+def test_near_rejects_an_incomplete_or_invalid_point(
+    client: TestClient, term: Term, params: dict, blamed: str
+):
+    _assert_invalid(_search(client, term, **params), blamed)
