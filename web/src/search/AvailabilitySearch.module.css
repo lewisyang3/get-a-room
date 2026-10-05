@@ -48,12 +48,6 @@
   border-radius: 0.625rem;
 }
 
-.hint {
-  flex-basis: 100%;
-  font-size: 0.9375rem;
-  color: var(--text-secondary);
-}
-
 /* Buttons ------------------------------------------------------------- */
 
 .primaryButton,

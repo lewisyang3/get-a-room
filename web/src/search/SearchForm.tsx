@@ -57,7 +57,6 @@ function SearchForm({
   const [mode, setMode] = useState<Mode>('now')
   const [at, setAt] = useState(() => nextHalfHourInPacific(new Date()))
   const id = useId()
-  const hintId = `${id}-hint`
   const atId = `${id}-at`
   const buildingSelectId = `${id}-building`
   const textId = `${id}-text`
@@ -69,7 +68,7 @@ function SearchForm({
 
   return (
     <form className={styles.form} onSubmit={handleSubmit} aria-label="Search">
-      <fieldset className={styles.field} aria-describedby={hintId}>
+      <fieldset className={styles.field}>
         <legend className={styles.legend}>When</legend>
         <SegmentedControl
           name={`${id}-mode`}
@@ -161,9 +160,6 @@ function SearchForm({
           </span>
         </fieldset>
       )}
-      <p id={hintId} className={styles.hint}>
-        Pacific time · 7&nbsp;a.m. to 10&nbsp;p.m.
-      </p>
     </form>
   )
 }
