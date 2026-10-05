@@ -10,7 +10,12 @@ from sqlalchemy import ColumnElement, Select, func, null, select
 from sqlalchemy.orm import Session
 
 from app.api.queries import searchable_rooms
-from app.api.schemas.availability import AvailabilityPage, AvailabilityResponse
+from app.api.schemas.availability import (
+    AvailabilityPage,
+    AvailabilityResponse,
+    BuildingAvailability,
+    BuildingAvailabilityList,
+)
 from app.api.schemas.errors import ErrorResponse, ValidationErrorResponse
 from app.db import get_db
 from app.models.models import AvailabilityInterval, Building, Room, Term
@@ -477,3 +482,94 @@ def get_available_rooms(
 
     # Returns this page of available rooms.
     return page(total, results)
+
+
+# Returns, for each building with a room free, how many are free and for how
+# long.
+@router.get(
+    "/buildings",
+    response_model=BuildingAvailabilityList,
+    summary="Summarise available rooms by building",
+    responses=_SEARCH_RESPONSES,
+)
+def get_available_buildings(
+    # Reads and validates the search parameters.
+    search: _Search = Depends(search_params),
+    # Gets a database session from FastAPI.
+    db: Session = Depends(get_db),
+    # Gets the current time from FastAPI.
+    now: datetime = Depends(get_now),
+) -> BuildingAvailabilityList:
+    """Each building with a room free at the requested time: how many rooms
+    are free, and the longest any of them stays free.
+
+    Takes the same search as `/availability`, without paging, and every
+    building is counted, not just one page's worth. A building's
+    `free_rooms` is the `total` `/availability` reports for the same search
+    with its `building_id`. Buildings with no matching room are left out;
+    `/buildings` lists them all. Sorted by building name, or with
+    `near_latitude` and `near_longitude` by approximate distance, nearest
+    first and buildings with no coordinates last.
+    """
+    moment, statement, distance = _matching_intervals(db, search, now)
+    requested_time = moment.time
+
+    # Builds the response for the resolved weekday and time.
+    def summary(results: list[BuildingAvailability]) -> BuildingAvailabilityList:
+        return BuildingAvailabilityList(
+            date=moment.date,
+            day_of_week=moment.day_of_week,
+            time=requested_time.strftime("%H:%M"),
+            results=results,
+        )
+
+    if statement is None:
+        return summary([])
+
+    # Groups the matching intervals by building. Grouping by the primary key
+    # lets Postgres select the building's other columns too.
+    statement = (
+        statement.with_only_columns(
+            Building.building_id,
+            Building.short_code,
+            Building.name,
+            # Distinct, so the count is rooms rather than intervals.
+            func.count(Room.room_id.distinct()),
+            func.max(AvailabilityInterval.end_time),
+            distance,
+        )
+        .group_by(Building.building_id)
+        .order_by(
+            # Same order as /availability's buildings; the id breaks ties.
+            *((distance.asc().nulls_last(),) if search.near is not None else ()),
+            Building.name,
+            Building.building_id,
+        )
+    )
+
+    return summary(
+        [
+            BuildingAvailability(
+                building_id=building_id,
+                building_code=building_code,
+                building_name=building_name,
+                free_rooms=free_rooms,
+                longest_free_until=free_until.strftime("%H:%M"),
+                longest_free_minutes=int(
+                    _minutes_since_midnight(free_until)
+                    - _minutes_since_midnight(requested_time)
+                ),
+                distance_meters=(
+                    round(distance_meters) if distance_meters is not None else None
+                ),
+            )
+            for (
+                building_id,
+                building_code,
+                building_name,
+                free_rooms,
+                free_until,
+                distance_meters,
+            ) in db.execute(statement)
+        ]
+    )

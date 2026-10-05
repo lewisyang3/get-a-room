@@ -75,3 +75,71 @@ class AvailabilityPage(BaseModel):
     results: list[AvailabilityResponse] = Field(
         description="This page of rooms, by building name, then room number."
     )
+
+
+class BuildingAvailability(BaseModel):
+    """A building with at least one room free at the time searched."""
+
+    building_id: int = Field(description="The building's id.")
+    building_code: str = Field(
+        description="The building's short code, usable as the `building_code` "
+        "filter."
+    )
+    building_name: str = Field(description="The building's name.")
+    free_rooms: int = Field(
+        description="How many of the building's rooms match the search: the "
+        "`total` `/availability` reports for the same search with this "
+        "`building_id`."
+    )
+    longest_free_until: str = Field(
+        description="The latest `available_until` among those rooms, `HH:MM` in "
+        "the term's timezone."
+    )
+    longest_free_minutes: int = Field(
+        description="Whole minutes from the time searched to " "`longest_free_until`."
+    )
+    distance_meters: int | None = Field(
+        default=None,
+        description="The building's approximate distance in metres from "
+        "`near_latitude`/`near_longitude`, or null when those weren't given or "
+        "the building has no coordinates.",
+    )
+
+
+class BuildingAvailabilityList(BaseModel):
+    """Every building with a room free, with the date, weekday, and time
+    searched."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "date": "2025-10-17",
+                    "day_of_week": 4,
+                    "time": "14:30",
+                    "results": [
+                        {
+                            "building_id": 2,
+                            "building_code": "DWINELLE",
+                            "building_name": "Dwinelle",
+                            "free_rooms": 6,
+                            "longest_free_until": "22:00",
+                            "longest_free_minutes": 450,
+                            "distance_meters": None,
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    date: Date | None = Field(
+        description="The local date searched; null for a `day_of_week` + `time` "
+        "search, which covers every week."
+    )
+    day_of_week: int = Field(description="The weekday searched, 0 = Monday.")
+    time: str = Field(description="The time searched, `HH:MM` in the term's timezone.")
+    results: list[BuildingAvailability] = Field(
+        description="Every building with a room matching the search, by name; "
+        "buildings with none are left out."
+    )
