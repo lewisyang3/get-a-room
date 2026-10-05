@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent } from 'react'
 import { MINIMUM_MINUTES_OPTIONS, type SearchWhen } from '../api/availability'
+import type { Building } from '../api/buildings'
 import { formatDuration, nextHalfHourInPacific } from '../format'
 import styles from './AvailabilitySearch.module.css'
 import SegmentedControl, { type SegmentedOption } from './SegmentedControl'
@@ -8,6 +9,10 @@ type Props = {
   onSearch: (when: SearchWhen) => void
   minimumMinutes: number
   onMinimumMinutesChange: (minutes: number) => void
+  /** The buildings to choose from, or null to leave the filter out. */
+  buildings: Building[] | null
+  buildingId: number | null
+  onBuildingChange: (buildingId: number | null) => void
 }
 
 type Mode = 'now' | 'later'
@@ -25,12 +30,16 @@ function SearchForm({
   onSearch,
   minimumMinutes,
   onMinimumMinutesChange,
+  buildings,
+  buildingId,
+  onBuildingChange,
 }: Props) {
   const [mode, setMode] = useState<Mode>('now')
   const [at, setAt] = useState(() => nextHalfHourInPacific(new Date()))
   const id = useId()
   const hintId = `${id}-hint`
   const atId = `${id}-at`
+  const buildingSelectId = `${id}-building`
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -76,6 +85,30 @@ function SearchForm({
           onChange={onMinimumMinutesChange}
         />
       </fieldset>
+      {buildings && (
+        <div className={`${styles.field} ${styles.fullRow}`}>
+          <label htmlFor={buildingSelectId} className={styles.legend}>
+            Building
+          </label>
+          <select
+            id={buildingSelectId}
+            className={styles.select}
+            value={buildingId ?? ''}
+            onChange={(event) =>
+              onBuildingChange(
+                event.target.value === '' ? null : Number(event.target.value),
+              )
+            }
+          >
+            <option value="">All buildings</option>
+            {buildings.map((building) => (
+              <option key={building.building_id} value={building.building_id}>
+                {building.building_name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <p id={hintId} className={styles.hint}>
         Pacific time · 7&nbsp;a.m. to 10&nbsp;p.m.
       </p>

@@ -30,11 +30,14 @@
 
 .legend {
   float: left;
+  /* Legends have inline padding by default; labels don't. */
+  padding: 0;
   margin-right: var(--space-1);
   font-weight: 600;
 }
 
-.dateTime {
+.dateTime,
+.select {
   min-height: 2.75rem;
   padding: 0 var(--space-3);
   font: inherit;

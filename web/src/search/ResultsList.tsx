@@ -1,9 +1,10 @@
 import type {
-  ApiError,
   AvailabilityPage,
   AvailabilityResult,
   SearchWhen,
 } from '../api/availability'
+import type { Building } from '../api/buildings'
+import type { ApiError } from '../api/http'
 import {
   formatClockTime,
   formatDuration,
@@ -14,6 +15,7 @@ import type { AvailabilityState } from './useAvailability'
 import styles from './AvailabilitySearch.module.css'
 
 type Props = AvailabilityState & {
+  buildings: Building[] | null
   onRetry: () => void
   onLoadMore: () => void
 }
@@ -27,6 +29,16 @@ const ERROR_MESSAGES: Record<ApiError['kind'], string> = {
 
 function roomCount(count: number): string {
   return `${count} ${count === 1 ? 'room' : 'rooms'}`
+}
+
+// The name of the building the results are for, or null for every building.
+function buildingName(
+  buildings: Building[] | null,
+  buildingId: number | null,
+): string | null {
+  if (buildingId === null) return null
+  const building = buildings?.find((b) => b.building_id === buildingId)
+  return building?.building_name ?? null
 }
 
 function ResultRow({ result }: { result: AvailabilityResult }) {
@@ -57,21 +69,27 @@ function ResultRow({ result }: { result: AvailabilityResult }) {
 function Summary({
   when,
   minimumMinutes,
+  buildingName,
   page,
 }: {
   when: SearchWhen
   minimumMinutes: number
+  buildingName: string | null
   page: AvailabilityPage
 }) {
   const moment = formatSearchMoment(when, page)
   const minimum = formatMinimumDuration(minimumMinutes)
+  const place = buildingName ? ` in ${buildingName}` : ''
   if (page.total === 0) {
     return (
       <>
-        <h2 className={styles.summaryTitle}>No rooms free {moment}</h2>
+        <h2 className={styles.summaryTitle}>
+          No rooms free {moment}
+          {place}
+        </h2>
         <p className={styles.secondary}>
-          Nothing is free for at least {minimum} {moment}. Availability covers
-          7&nbsp;a.m. to 10&nbsp;p.m. on days during the term.
+          Nothing{place} is free for at least {minimum} {moment}. Availability
+          covers 7&nbsp;a.m. to 10&nbsp;p.m. on days during the term.
         </p>
       </>
     )
@@ -80,6 +98,7 @@ function Summary({
     <>
       <h2 className={styles.summaryTitle}>
         {roomCount(page.total)} free {moment}
+        {place}
       </h2>
       <p className={styles.secondary}>For at least {minimum}</p>
     </>
@@ -89,6 +108,7 @@ function Summary({
 function ResultsList({
   status,
   resultsQuery,
+  buildings,
   page,
   results,
   error,
@@ -134,6 +154,7 @@ function ResultsList({
         <Summary
           when={resultsQuery.when}
           minimumMinutes={resultsQuery.minimumMinutes}
+          buildingName={buildingName(buildings, resultsQuery.buildingId)}
           page={page}
         />
       </div>
