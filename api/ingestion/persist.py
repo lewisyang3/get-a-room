@@ -79,7 +79,7 @@ def canonical_source_url(taxonomy_id: int) -> str:
     return f"{BASE_URL}/taxonomy/term/{taxonomy_id}"
 
 
-def _building_short_code(name: str) -> str:
+def building_short_code(name: str) -> str:
     """Derives a stable, unique key from a scraped building name.
 
     Berkeley's section pages don't expose a canonical building code (only
@@ -106,7 +106,7 @@ _RoomCache = dict[tuple[int, str], Room]
 
 
 def _get_or_create_building(db: Session, name: str, cache: _BuildingCache) -> Building:
-    short_code = _building_short_code(name)
+    short_code = building_short_code(name)
     cached = cache.get(short_code)
     if cached is not None:
         return cached

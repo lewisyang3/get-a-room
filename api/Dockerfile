@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY ingestion ./ingestion
+COPY data ./data
 COPY alembic ./alembic
 COPY alembic.ini ./
 

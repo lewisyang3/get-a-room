@@ -9,7 +9,14 @@ import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 import ingestion.cli
-from app.models.models import ImportRun, ImportStatus, Meeting, Term, TermStatus
+from app.models.models import (
+    Building,
+    ImportRun,
+    ImportStatus,
+    Meeting,
+    Term,
+    TermStatus,
+)
 from ingestion.cli import main
 from tests.conftest import (
     FakeResponse,
@@ -588,3 +595,68 @@ def test_import_run_records_a_sigterm_and_exits_143(
     assert "INTERRUPTED" in caplog.text
     assert session.closed
     assert signal.getsignal(signal.SIGTERM) is previous_handler
+
+
+def _locations_csv(tmp_path, text: str):
+    path = tmp_path / "locations.csv"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_buildings_set_locations_updates_and_reports(
+    cli, db: Session, tmp_path, capsys
+):
+    db.add_all(
+        [
+            Building(name="Dwinelle", short_code="DWINELLE"),
+            Building(name="Wheeler", short_code="WHEELER"),
+        ]
+    )
+    db.commit()
+    path = _locations_csv(
+        tmp_path,
+        "name,latitude,longitude\nDwinelle,37.87073,-122.26074\nSoda,37.8756,-122.2587\n",
+    )
+
+    assert cli("buildings", "set-locations", "--file", str(path)) == 0
+
+    dwinelle = db.query(Building).filter_by(short_code="DWINELLE").one()
+    assert (dwinelle.latitude, dwinelle.longitude) == (37.87073, -122.26074)
+    out = capsys.readouterr().out
+    assert "1 updated, 0 unchanged, 1 not in the database" in out
+    assert "Not in the database: Soda" in out
+    assert "Covered buildings without coordinates: Wheeler" in out
+
+    # Running it again changes nothing.
+    assert cli("buildings", "set-locations", "--file", str(path)) == 0
+    assert "0 updated, 1 unchanged" in capsys.readouterr().out
+
+
+def test_buildings_set_locations_uses_the_repo_csv_by_default(cli, db: Session):
+    db.add(Building(name="Evans", short_code="EVANS"))
+    db.commit()
+
+    assert cli("buildings", "set-locations") == 0
+
+    evans = db.query(Building).one()
+    assert evans.latitude is not None and evans.longitude is not None
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        (None, "can't read"),
+        ("name,latitude,longitude\nDwinelle,91,0\n", "line 2: latitude must be"),
+    ],
+)
+def test_buildings_set_locations_rejects_a_bad_file_without_changes(
+    cli, db: Session, tmp_path, capsys, text, message
+):
+    db.add(Building(name="Dwinelle", short_code="DWINELLE"))
+    db.commit()
+    path = tmp_path / "missing.csv" if text is None else _locations_csv(tmp_path, text)
+
+    assert cli("buildings", "set-locations", "--file", str(path)) == 2
+
+    assert message in capsys.readouterr().err
+    assert db.query(Building).one().latitude is None
