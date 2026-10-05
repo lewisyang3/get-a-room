@@ -8,6 +8,16 @@
   padding-bottom: max(var(--space-8), env(safe-area-inset-bottom));
 }
 
+/* Wider with the map beside the results. The text keeps its readable width. */
+.page:has([data-layout='side-by-side']) {
+  max-width: 80rem;
+}
+
+.hero,
+.note {
+  max-width: 40rem;
+}
+
 .header {
   padding-top: max(var(--space-6), env(safe-area-inset-top));
 }

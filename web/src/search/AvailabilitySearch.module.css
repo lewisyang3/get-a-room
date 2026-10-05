@@ -1,7 +1,33 @@
-.search {
+.search,
+.searchColumn {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
+}
+
+.searchColumn {
+  min-width: 0;
+}
+
+/* Map ----------------------------------------------------------------- */
+
+/* Results on the left at their readable width, and the map filling the rest,
+   staying in view while the results scroll. */
+.search[data-layout='side-by-side'] {
+  display: grid;
+  grid-template-columns: minmax(0, 40rem) minmax(0, 1fr);
+  align-items: start;
+}
+
+.mapPane {
+  height: 70dvh;
+  min-height: 20rem;
+}
+
+[data-layout='side-by-side'] > .mapPane {
+  position: sticky;
+  top: var(--space-6);
+  height: calc(100dvh - 2 * var(--space-6));
 }
 
 /* Form ---------------------------------------------------------------- */
