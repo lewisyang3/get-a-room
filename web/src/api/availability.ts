@@ -12,6 +12,10 @@ export type AvailabilityResult = {
   available_from: string
   available_until: string
   available_minutes: number
+  /** The building's distance in metres from the point searched near, or
+   * null when not searching near a point or the building's location is
+   * unknown. */
+  distance_meters: number | null
 }
 
 /** One page of rooms, with the date, weekday and time the API searched. */
@@ -25,6 +29,9 @@ export type AvailabilityPage = {
   time: string
   results: AvailabilityResult[]
 }
+
+/** A place on the map, in degrees. */
+export type Point = { latitude: number; longitude: number }
 
 /** When to search: right now, or at a Pacific clock time
  * (`YYYY-MM-DDTHH:MM`, no UTC offset). */
@@ -49,6 +56,8 @@ export type AvailabilityRequest = {
   building: string | null
   /** Only rooms with exactly this room number. */
   room: string | null
+  /** Sorts the nearest buildings first, or by building name when null. */
+  near: Point | null
   offset?: number
   limit?: number
   signal?: AbortSignal
@@ -62,6 +71,7 @@ export function availabilityUrl({
   buildingId,
   building,
   room,
+  near,
   offset = 0,
   limit = PAGE_SIZE,
   baseUrl = apiBaseUrl,
@@ -73,6 +83,10 @@ export function availabilityUrl({
   if (buildingId !== null) params.set('building_id', String(buildingId))
   if (building !== null) params.set('building', building)
   if (room !== null) params.set('room', room)
+  if (near !== null) {
+    params.set('near_latitude', String(near.latitude))
+    params.set('near_longitude', String(near.longitude))
+  }
   params.set('limit', String(limit))
   params.set('offset', String(offset))
   return `${baseUrl}/availability?${params}`

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatClockTime,
+  formatDistance,
   formatDuration,
   formatMinimumDuration,
   formatSearchMoment,
@@ -31,6 +32,19 @@ describe('formatDuration', () => {
     [0, '0 min'],
   ])('formats %i minutes as %s', (minutes, expected) => {
     expect(formatDuration(minutes)).toBe(expected.replace(/(\d) /g, '$1 '))
+  })
+})
+
+describe('formatDistance', () => {
+  it.each([
+    [0, 'Under 0.1 mi'],
+    [160, 'Under 0.1 mi'],
+    [161, '0.1 mi'],
+    [416, '0.3 mi'],
+    [1609, '1.0 mi'],
+    [24_000, '15 mi'],
+  ])('formats %i m as %s', (meters, expected) => {
+    expect(formatDistance(meters)).toBe(nbsp(expected))
   })
 })
 

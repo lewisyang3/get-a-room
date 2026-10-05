@@ -3,24 +3,27 @@ import {
   fetchAvailability,
   type AvailabilityPage,
   type AvailabilityResult,
+  type Point,
   type SearchWhen,
 } from '../api/availability'
 import { ApiError } from '../api/http'
 import { parseRoomSearch } from './roomSearch'
 
 /** What to search for: when, how long a room must stay free, which
- * building (null for every building), and the room or building search text
- * (normalized, and empty for none). */
+ * building (null for every building), the room or building search text
+ * (normalized, and empty for none), and the point to sort nearest to (null
+ * to sort by building). */
 export type SearchQuery = {
   when: SearchWhen
   minimumMinutes: number
   buildingId: number | null
   text: string
+  near: Point | null
 }
 
 // The API parameters for a query's filters.
-function requestFor({ minimumMinutes, buildingId, text }: SearchQuery) {
-  return { minimumMinutes, buildingId, ...parseRoomSearch(text) }
+function requestFor({ minimumMinutes, buildingId, text, near }: SearchQuery) {
+  return { minimumMinutes, buildingId, ...parseRoomSearch(text), near }
 }
 
 export type AvailabilityState = {

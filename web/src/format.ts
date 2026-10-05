@@ -25,6 +25,17 @@ export function formatDuration(totalMinutes: number): string {
   return parts.join(' ')
 }
 
+const METERS_PER_MILE = 1609.344
+
+/** Formats a distance in metres as miles, e.g. "0.3 mi" or "Under 0.1 mi".
+ * Tenths are precise enough for walking across campus. */
+export function formatDistance(meters: number): string {
+  const miles = meters / METERS_PER_MILE
+  if (miles < 0.1) return `Under${NBSP}0.1${NBSP}mi`
+  const rounded = miles < 10 ? miles.toFixed(1) : String(Math.round(miles))
+  return `${rounded}${NBSP}mi`
+}
+
 /** Describes a minimum free time for a sentence, e.g. "30 minutes",
  * "an hour" or "2 hours". */
 export function formatMinimumDuration(minutes: number): string {
