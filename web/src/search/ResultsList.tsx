@@ -107,7 +107,8 @@ function BuildingGroupView({
             href={directions}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`Directions to ${name}`}
+            // Says it opens a new tab, which the visible text doesn't.
+            aria-label={`Directions to ${name} (opens in a new tab)`}
           >
             Directions
           </a>

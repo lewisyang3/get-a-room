@@ -623,7 +623,7 @@ describe('AvailabilitySearch', () => {
       render(<AvailabilitySearch termId={3} />)
 
       const link = await screen.findByRole('link', {
-        name: 'Directions to Evans',
+        name: 'Directions to Evans (opens in a new tab)',
       })
       const url = new URL(link.getAttribute('href') ?? '')
       expect(url.origin + url.pathname).toBe('https://www.google.com/maps/dir/')
