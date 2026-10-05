@@ -22,8 +22,10 @@ type LocatedBuilding = Building & { latitude: number; longitude: number }
 const DARK_SCHEME = '(prefers-color-scheme: dark)'
 
 // The Standard style's lighting, following the page's light or dark theme.
-function lightPreset(): 'day' | 'night' {
-  return window.matchMedia?.(DARK_SCHEME).matches ? 'night' : 'day'
+// Dusk rather than night in dark mode: night lights buildings so dimly that
+// their 3D shapes barely show.
+function lightPreset(): 'day' | 'dusk' {
+  return window.matchMedia?.(DARK_SCHEME).matches ? 'dusk' : 'day'
 }
 
 function isLocated(building: Building): building is LocatedBuilding {
@@ -105,8 +107,9 @@ function CampusMap({
         style: 'mapbox://styles/mapbox/standard',
         config: { basemap: { lightPreset: lightPreset() } },
         bounds,
-        fitBoundsOptions: { padding: 64, maxZoom: 17 },
-        pitch: 45,
+        // Tilted and turned, so the Standard style's 3D buildings and trees
+        // show their height. The fit sets the camera, so the tilt goes here.
+        fitBoundsOptions: { padding: 40, maxZoom: 17, pitch: 60, bearing: -20 },
       })
     } catch {
       unavailable()

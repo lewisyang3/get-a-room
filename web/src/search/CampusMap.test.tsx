@@ -68,6 +68,8 @@ describe('CampusMap', () => {
     expect(options.bounds?.points).toContainEqual([-122.2607, 37.8707])
     expect(options.bounds?.points).toContainEqual([-122.2577, 37.8736])
     expect(options.config?.basemap?.lightPreset).toBe('day')
+    // Tilted, so buildings show in 3D.
+    expect(options.fitBoundsOptions).toMatchObject({ pitch: 60 })
   })
 
   it('shows each located building with how many rooms it has free', () => {
