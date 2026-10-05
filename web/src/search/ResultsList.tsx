@@ -150,12 +150,14 @@ function Summary({
   minimumMinutes,
   buildingName,
   text,
+  nearestFirst,
   page,
 }: {
   when: SearchWhen
   minimumMinutes: number
   buildingName: string | null
   text: string
+  nearestFirst: boolean
   page: AvailabilityPage
 }) {
   const moment = formatSearchMoment(when, page)
@@ -192,7 +194,10 @@ function Summary({
         {place}
         {matching}
       </h2>
-      <p className={styles.secondary}>For at least {minimum}</p>
+      <p className={styles.secondary}>
+        For at least {minimum}
+        {nearestFirst && ' · Nearest first'}
+      </p>
     </>
   )
 }
@@ -249,6 +254,7 @@ function ResultsList({
           minimumMinutes={resultsQuery.minimumMinutes}
           buildingName={buildingName(buildings, resultsQuery.buildingId)}
           text={resultsQuery.text}
+          nearestFirst={resultsQuery.near !== null}
           page={page}
         />
       </div>

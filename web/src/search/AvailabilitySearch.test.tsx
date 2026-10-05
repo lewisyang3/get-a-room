@@ -102,8 +102,40 @@ function requestedUrl(fetchMock: ReturnType<typeof vi.fn>, call: number) {
 // collapses them to plain spaces, but accessible names keep them.
 const nbsp = (text: string) => text.replaceAll(' ', ' ')
 
+type GeolocationResult =
+  { latitude: number; longitude: number } | 'denied' | 'pending'
+
+/** Gives the page a device location, a refusal, or one that waits for the
+ * returned `respond`. jsdom has no navigator.geolocation of its own. */
+function stubGeolocation(result: GeolocationResult) {
+  let respond: (latitude: number, longitude: number) => void = () => {}
+  const getCurrentPosition = vi.fn(
+    (
+      success: (position: {
+        coords: { latitude: number; longitude: number }
+      }) => void,
+      failure: (error: { code: number; message: string }) => void,
+    ) => {
+      if (result === 'denied') failure({ code: 1, message: 'User denied' })
+      else if (result === 'pending')
+        respond = (latitude, longitude) =>
+          success({ coords: { latitude, longitude } })
+      else success({ coords: result })
+    },
+  )
+  Object.defineProperty(navigator, 'geolocation', {
+    value: { getCurrentPosition },
+    configurable: true,
+  })
+  return {
+    getCurrentPosition,
+    respond: (lat: number, lng: number) => respond(lat, lng),
+  }
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
+  delete (navigator as { geolocation?: unknown }).geolocation
 })
 
 describe('AvailabilitySearch', () => {
@@ -604,6 +636,216 @@ describe('AvailabilitySearch', () => {
       const dwinelle = screen.getByRole('region', { name: 'Dwinelle' })
       expect(within(dwinelle).queryByRole('link')).not.toBeInTheDocument()
       expect(dwinelle).not.toHaveTextContent(/\bmi\b/)
+    })
+  })
+
+  describe('nearest sort', () => {
+    const LOCATED_BUILDINGS = () =>
+      jsonResponse({
+        results: [
+          { ...BUILDINGS[0], latitude: 37.87073, longitude: -122.26074 },
+          { ...BUILDINGS[1], latitude: 37.87362, longitude: -122.25768 },
+        ],
+      })
+    const evans = (id: number, distance: number | null) =>
+      room(id, {
+        building_id: 2,
+        building_code: 'EVANS',
+        building_name: 'Evans',
+        distance_meters: distance,
+      })
+    const sortGroup = () => screen.findByRole('group', { name: 'Sort' })
+
+    it('sorts by the rounded device location', async () => {
+      const user = userEvent.setup()
+      stubGeolocation({ latitude: 37.87362, longitude: -122.25768 })
+      const fetchMock = stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [
+          () => jsonResponse(page([room(1), evans(2, null)])),
+          () =>
+            jsonResponse(
+              page([evans(2, 3), room(1, { distance_meters: 416 })]),
+            ),
+        ],
+      })
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '2 rooms free now' })
+
+      await user.click(
+        within(await sortGroup()).getByRole('radio', { name: 'Nearest' }),
+      )
+
+      expect(
+        await screen.findByText('For at least an hour · Nearest first'),
+      ).toBeInTheDocument()
+      const url = requestedUrl(fetchMock, 1)
+      // Rounded to about 100 m before it's sent.
+      expect(url.searchParams.get('near_latitude')).toBe('37.874')
+      expect(url.searchParams.get('near_longitude')).toBe('-122.258')
+      expect(
+        screen
+          .getAllByRole('heading', { level: 3 })
+          .map((heading) => heading.textContent),
+      ).toEqual(['Evans', 'Dwinelle'])
+      expect(screen.getByRole('region', { name: 'Evans' })).toHaveTextContent(
+        'Under 0.1 mi',
+      )
+      expect(
+        screen.getByRole('region', { name: 'Dwinelle' }),
+      ).toHaveTextContent('0.3 mi')
+    })
+
+    it('says while it finds the location', async () => {
+      const user = userEvent.setup()
+      const geolocation = stubGeolocation('pending')
+      stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [
+          () => jsonResponse(page([room(1)])),
+          () => jsonResponse(page([room(1, { distance_meters: 416 })])),
+        ],
+      })
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+      const group = await sortGroup()
+
+      await user.click(within(group).getByRole('radio', { name: 'Nearest' }))
+
+      expect(within(group).getByRole('status')).toHaveTextContent(
+        'Finding your location…',
+      )
+      expect(
+        within(group).getByRole('radio', { name: 'Nearest' }),
+      ).toBeChecked()
+
+      geolocation.respond(37.87073, -122.26074)
+      expect(
+        await screen.findByText('For at least an hour · Nearest first'),
+      ).toBeInTheDocument()
+      expect(within(group).getByRole('status')).toHaveTextContent('')
+    })
+
+    it('goes back to sorting by building when the location is refused', async () => {
+      const user = userEvent.setup()
+      stubGeolocation('denied')
+      const fetchMock = stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [() => jsonResponse(page([room(1)]))],
+      })
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+      const group = await sortGroup()
+
+      await user.click(within(group).getByRole('radio', { name: 'Nearest' }))
+
+      expect(
+        await within(group).findByText(
+          "Couldn't get your location, so rooms are sorted by building.",
+        ),
+      ).toBeInTheDocument()
+      expect(
+        within(group).getByRole('radio', { name: 'Building' }),
+      ).toBeChecked()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('is left out when location or building locations are unavailable', async () => {
+      // No navigator.geolocation.
+      stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [() => jsonResponse(page([room(1)]))],
+      })
+      const { unmount } = render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('combobox', { name: 'Building' })
+      expect(
+        screen.queryByRole('group', { name: 'Sort' }),
+      ).not.toBeInTheDocument()
+      unmount()
+
+      // No building has coordinates.
+      stubGeolocation({ latitude: 37.87, longitude: -122.26 })
+      stubResponses(() => jsonResponse(page([room(1)])))
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('combobox', { name: 'Building' })
+      expect(
+        screen.queryByRole('group', { name: 'Sort' }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('keeps sorting by distance when showing more and trying again', async () => {
+      const user = userEvent.setup()
+      stubGeolocation({ latitude: 37.87362, longitude: -122.25768 })
+      const fetchMock = stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [
+          () => jsonResponse(page([room(1)])),
+          () => jsonResponse({}, 503),
+          () => jsonResponse(page([evans(2, 3), evans(3, 3)], { total: 3 })),
+          () =>
+            jsonResponse(
+              page([room(4, { distance_meters: null })], {
+                total: 3,
+                offset: 2,
+              }),
+            ),
+        ],
+      })
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.click(
+        within(await sortGroup()).getByRole('radio', { name: 'Nearest' }),
+      )
+      await screen.findByRole('alert')
+      await user.click(screen.getByRole('button', { name: 'Try again' }))
+      await screen.findByText('Showing 2 of 3')
+      await user.click(screen.getByRole('button', { name: 'Show more' }))
+      await screen.findByText('Room 204')
+
+      for (const call of [2, 3]) {
+        expect(
+          requestedUrl(fetchMock, call).searchParams.get('near_latitude'),
+        ).toBe('37.874')
+      }
+      // Sorted by distance, a building with no location says so.
+      expect(
+        screen.getByRole('region', { name: 'Dwinelle' }),
+      ).toHaveTextContent('Location unknown')
+    })
+
+    it('stops sorting by distance when Building is chosen', async () => {
+      const user = userEvent.setup()
+      const geolocation = stubGeolocation({
+        latitude: 37.87362,
+        longitude: -122.25768,
+      })
+      const fetchMock = stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [
+          () => jsonResponse(page([room(1)])),
+          () => jsonResponse(page([room(1, { distance_meters: 416 })])),
+          () => jsonResponse(page([room(1)])),
+          () => jsonResponse(page([room(1, { distance_meters: 416 })])),
+        ],
+      })
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+      const group = await sortGroup()
+
+      await user.click(within(group).getByRole('radio', { name: 'Nearest' }))
+      await screen.findByText('For at least an hour · Nearest first')
+      await user.click(within(group).getByRole('radio', { name: 'Building' }))
+
+      await screen.findByText('For at least an hour')
+      expect(requestedUrl(fetchMock, 2).searchParams.has('near_latitude')).toBe(
+        false,
+      )
+
+      // Choosing Nearest again reuses the location instead of asking again.
+      await user.click(within(group).getByRole('radio', { name: 'Nearest' }))
+      await screen.findByText('For at least an hour · Nearest first')
+      expect(geolocation.getCurrentPosition).toHaveBeenCalledTimes(1)
     })
   })
 

@@ -24,6 +24,10 @@ line; the detail is here.
   doesn't shift results.
 - **07:00 to 22:00, to the minute.** Availability covers those hours only, and
   seconds are ignored.
+- **Distances are approximate.** "Nearest" uses your location only when you
+  choose it. It's rounded to about 100 m before it's sent, and it isn't
+  stored. Distances are straight-line, from each building's center, and a
+  building whose location isn't known yet is listed last.
 
 ## Prerequisites
 
