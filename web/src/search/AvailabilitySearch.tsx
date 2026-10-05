@@ -14,6 +14,7 @@ const DEFAULT_FILTERS: Filters = {
   minimumMinutes: DEFAULT_MINIMUM_MINUTES,
   buildingId: null,
   text: '',
+  near: null,
 }
 
 // How long typing pauses before the search text applies.
