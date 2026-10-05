@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AvailabilityPage, AvailabilityResult } from '../api/availability'
 import type { Building } from '../api/buildings'
 import { expectNoAxeViolations } from '../test/axe'
+import { mapbox } from '../test/mapbox'
 import AvailabilitySearch from './AvailabilitySearch'
+
+vi.mock('mapbox-gl', async () => (await import('../test/mapbox')).module)
 
 function room(id: number, overrides: Partial<AvailabilityResult> = {}) {
   return {
@@ -61,17 +64,40 @@ const BUILDINGS: Building[] = [
   },
 ]
 
-/** Stubs fetch by endpoint. /buildings answers with `buildings`, and each
- * /availability request takes the next of `availability` in turn. Returns a
- * mock that records only the /availability requests. */
+/** A /availability/buildings response: [building id, rooms free] pairs. */
+function counts(...pairs: [number, number][]) {
+  return {
+    date: '2026-10-05',
+    day_of_week: 0,
+    time: '14:30',
+    results: pairs.map(([id, free]) => ({
+      building_id: id,
+      building_code: `B${id}`,
+      building_name: `Building ${id}`,
+      free_rooms: free,
+      longest_free_until: '22:00',
+      longest_free_minutes: 450,
+      distance_meters: null,
+    })),
+  }
+}
+
+/** Stubs fetch by endpoint. /buildings answers with `buildings`,
+ * /availability/buildings with `counts`, and each /availability request takes
+ * the next of `availability` in turn. Returns a mock that records only the
+ * /availability requests, with the /availability/buildings ones on
+ * `.counts`. */
 function stubApi({
   buildings = () => jsonResponse({ results: BUILDINGS }),
   availability,
+  counts: respondCounts = () => jsonResponse(counts()),
 }: {
   buildings?: Respond
   availability: Respond[]
+  counts?: Respond
 }) {
-  // Takes the URL so tests can read it from mock.calls.
+  // Both take the URL so tests can read it from mock.calls.
+  const countsMock = vi.fn(async (_url: string) => respondCounts())
   const availabilityMock = vi.fn(async (_url: string) => {
     const next = availability.shift()
     if (!next) throw new Error('Unexpected request')
@@ -83,10 +109,11 @@ function stubApi({
       const { pathname } = new URL(url)
       if (pathname === '/buildings') return buildings()
       if (pathname === '/availability') return availabilityMock(url)
+      if (pathname === '/availability/buildings') return countsMock(url)
       throw new Error(`Unexpected request to ${pathname}`)
     }),
   )
-  return availabilityMock
+  return Object.assign(availabilityMock, { counts: countsMock })
 }
 
 /** Stubs fetch with the default buildings and these /availability
@@ -134,9 +161,24 @@ function stubGeolocation(result: GeolocationResult) {
   }
 }
 
+/** Makes the screen wide enough for the map beside the results, or not.
+ * jsdom has no matchMedia of its own. */
+function stubScreen(width: 'wide' | 'narrow') {
+  Object.defineProperty(window, 'matchMedia', {
+    value: (query: string) => ({
+      matches: width === 'wide' && query === '(min-width: 64rem)',
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }),
+    configurable: true,
+  })
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
   delete (navigator as { geolocation?: unknown }).geolocation
+  delete (window as { matchMedia?: unknown }).matchMedia
+  mapbox.reset()
 })
 
 describe('AvailabilitySearch', () => {
@@ -1234,6 +1276,207 @@ describe('AvailabilitySearch', () => {
 
   // GAR-038: each state passes axe. The component is rendered without the
   // page's landmarks, so the region rule is left to the landing page test.
+  describe('campus map', () => {
+    const LOCATED = () =>
+      jsonResponse({
+        results: [
+          { ...BUILDINGS[0], latitude: 37.87073, longitude: -122.26074 },
+          { ...BUILDINGS[1], latitude: 37.87362, longitude: -122.25768 },
+        ],
+      })
+    const evans = (id: number) =>
+      room(id, {
+        building_id: 2,
+        building_code: 'EVANS',
+        building_name: 'Evans',
+      })
+    const withMap = (availability: Respond[]) =>
+      stubApi({
+        buildings: LOCATED,
+        availability,
+        counts: () => jsonResponse(counts([1, 2], [2, 3])),
+      })
+
+    it('is left out without a Mapbox token', async () => {
+      stubScreen('wide')
+      const fetchMock = stubApi({
+        buildings: LOCATED,
+        availability: [() => jsonResponse(page([room(1)]))],
+      })
+      render(<AvailabilitySearch termId={3} mapboxToken={null} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      expect(screen.queryByRole('region', { name: 'Campus map' })).toBeNull()
+      expect(screen.queryByRole('group', { name: 'Show' })).toBeNull()
+      expect(fetchMock.counts).not.toHaveBeenCalled()
+    })
+
+    it('is left out when no building has a location', async () => {
+      stubScreen('wide')
+      stubResponses(() => jsonResponse(page([room(1)])))
+      render(<AvailabilitySearch termId={3} mapboxToken="pk.test" />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      expect(screen.queryByRole('region', { name: 'Campus map' })).toBeNull()
+    })
+
+    it('shows each building with its count beside the results', async () => {
+      stubScreen('wide')
+      const fetchMock = withMap([() => jsonResponse(page([room(1)]))])
+      render(<AvailabilitySearch termId={3} mapboxToken="pk.test" />)
+
+      expect(
+        await screen.findByRole('button', { name: 'Evans: 3 rooms free' }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: 'Dwinelle: 2 rooms free' }),
+      ).toBeInTheDocument()
+      // The list shows alongside, with no switch.
+      expect(
+        screen.getByRole('heading', { name: '1 room free now' }),
+      ).toBeVisible()
+      expect(screen.queryByRole('group', { name: 'Show' })).toBeNull()
+      // Counted at the minute the list shows, across every building.
+      const url = new URL(fetchMock.counts.mock.calls[0][0])
+      expect(url.searchParams.get('at')).toBe('2026-10-05T14:30')
+      expect(url.searchParams.has('building_id')).toBe(false)
+    })
+
+    it('filters the results to a building chosen on the map, and back', async () => {
+      const user = userEvent.setup()
+      stubScreen('wide')
+      const fetchMock = withMap([
+        () => jsonResponse(page([room(1), evans(2)])),
+        () => jsonResponse(page([evans(2)])),
+        () => jsonResponse(page([room(1), evans(2)])),
+      ])
+      render(<AvailabilitySearch termId={3} mapboxToken="pk.test" />)
+      await screen.findByRole('heading', { name: '2 rooms free now' })
+
+      await user.click(
+        await screen.findByRole('button', { name: 'Evans: 3 rooms free' }),
+      )
+
+      expect(
+        await screen.findByRole('heading', {
+          name: '1 room free now in Evans',
+        }),
+      ).toBeInTheDocument()
+      expect(requestedUrl(fetchMock, 1).searchParams.get('building_id')).toBe(
+        '2',
+      )
+      expect(
+        screen.getByRole('combobox', { name: 'Building' }),
+      ).toHaveDisplayValue('Evans')
+      expect(
+        screen.getByRole('button', { name: 'Evans: 3 rooms free' }),
+      ).toHaveAttribute('aria-pressed', 'true')
+
+      await user.click(
+        screen.getByRole('button', { name: 'Evans: 3 rooms free' }),
+      )
+
+      expect(
+        await screen.findByRole('heading', { name: '2 rooms free now' }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('combobox', { name: 'Building' }),
+      ).toHaveDisplayValue('All buildings')
+    })
+
+    it('highlights and moves to a building chosen in the Building filter', async () => {
+      const user = userEvent.setup()
+      stubScreen('wide')
+      withMap([
+        () => jsonResponse(page([room(1), evans(2)])),
+        () => jsonResponse(page([evans(2)])),
+      ])
+      render(<AvailabilitySearch termId={3} mapboxToken="pk.test" />)
+      await screen.findByRole('button', { name: 'Evans: 3 rooms free' })
+
+      await user.selectOptions(
+        screen.getByRole('combobox', { name: 'Building' }),
+        'Evans',
+      )
+
+      expect(
+        screen.getByRole('button', { name: 'Evans: 3 rooms free' }),
+      ).toHaveAttribute('aria-pressed', 'true')
+      expect(mapbox.map.easeTo).toHaveBeenCalledWith({
+        center: [-122.25768, 37.87362],
+      })
+    })
+
+    it('switches between the list and the map on a narrow screen', async () => {
+      const user = userEvent.setup()
+      stubScreen('narrow')
+      withMap([
+        () => jsonResponse(page([room(1), evans(2)])),
+        () => jsonResponse(page([evans(2)])),
+      ])
+      render(<AvailabilitySearch termId={3} mapboxToken="pk.test" />)
+      await screen.findByRole('heading', { name: '2 rooms free now' })
+      // The map loads only when it's shown.
+      expect(mapbox.maps).toHaveLength(0)
+
+      await user.click(screen.getByRole('radio', { name: 'Map' }))
+
+      expect(
+        await screen.findByRole('region', { name: 'Campus map' }),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByRole('heading', { name: '2 rooms free now' }),
+      ).toBeNull()
+
+      // Choosing a building goes back to the list, showing its rooms.
+      await user.click(
+        await screen.findByRole('button', { name: 'Evans: 3 rooms free' }),
+      )
+
+      expect(
+        await screen.findByRole('heading', {
+          name: '1 room free now in Evans',
+        }),
+      ).toBeVisible()
+      expect(screen.getByRole('radio', { name: 'List' })).toBeChecked()
+      expect(screen.queryByRole('region', { name: 'Campus map' })).toBeNull()
+    })
+
+    it("falls back to the list when the map can't run", async () => {
+      const user = userEvent.setup()
+      stubScreen('narrow')
+      mapbox.supported = false
+      withMap([() => jsonResponse(page([room(1)]))])
+      render(<AvailabilitySearch termId={3} mapboxToken="pk.test" />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.click(screen.getByRole('radio', { name: 'Map' }))
+
+      expect(
+        await screen.findByRole('heading', { name: '1 room free now' }),
+      ).toBeVisible()
+      expect(screen.queryByRole('group', { name: 'Show' })).toBeNull()
+    })
+
+    it('has no accessibility violations beside the results', async () => {
+      stubScreen('wide')
+      withMap([() => jsonResponse(page([room(1), evans(2)]))])
+      render(<AvailabilitySearch termId={3} mapboxToken="pk.test" />)
+      await screen.findByRole('button', { name: 'Evans: 3 rooms free' })
+
+      await expectNoAxeViolations(document.body, { region: false })
+    })
+
+    it('has no accessibility violations with the switch on a narrow screen', async () => {
+      stubScreen('narrow')
+      withMap([() => jsonResponse(page([room(1)]))])
+      render(<AvailabilitySearch termId={3} mapboxToken="pk.test" />)
+      await screen.findByRole('radio', { name: 'Map' })
+
+      await expectNoAxeViolations(document.body, { region: false })
+    })
+  })
+
   describe('accessibility', () => {
     const check = () => expectNoAxeViolations(document.body, { region: false })
     const LOCATED_BUILDINGS = () =>
