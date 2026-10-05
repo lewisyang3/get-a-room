@@ -7,10 +7,11 @@
   background: var(--surface);
 }
 
-/* A count pill per building. Mapbox positions it with a transform, so press
-   feedback scales the content box with `scale` instead. */
+/* A count pill per building. Mapbox positions it (.mapboxgl-marker sets
+   position: absolute and a transform), so this sets neither: a `position`
+   here would win over Mapbox's and push each marker off its building. Press
+   feedback scales the content box with `scale` instead of `transform`. */
 .marker {
-  position: relative;
   min-width: 2rem;
   height: 2rem;
   padding: 0 var(--space-2);
@@ -28,7 +29,10 @@
   border-radius: 999px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
   cursor: pointer;
-  transition: scale 100ms ease-out;
+  /* Keeps Mapbox's own fade, which this would otherwise replace. */
+  transition:
+    scale 100ms ease-out,
+    opacity 0.2s;
 }
 
 /* A 44px hit area around the smaller pill. */
@@ -83,8 +87,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* No movement; the fade isn't motion, so it stays. */
   .marker {
-    transition: none;
+    transition: opacity 0.2s;
   }
 
   .marker:active {
