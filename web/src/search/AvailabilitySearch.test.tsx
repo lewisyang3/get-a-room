@@ -120,10 +120,11 @@ describe('AvailabilitySearch', () => {
     expect(url.searchParams.get('term_id')).toBe('3')
     expect(url.searchParams.has('at')).toBe(false)
 
-    const rows = within(screen.getByRole('list')).getAllByRole('listitem')
-    expect(rows).toHaveLength(2)
     // GAR-034: building, room, availability start and end, and duration.
-    expect(rows[0]).toHaveTextContent('Dwinelle 201')
+    const group = screen.getByRole('region', { name: 'Dwinelle' })
+    const rows = within(group).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent('Room 201')
     expect(rows[0]).toHaveTextContent('Free 2:30 PM – 5:00 PM')
     expect(rows[0]).toHaveTextContent('2 h 30 min')
     expect(rows[1]).toHaveTextContent('45 min')
@@ -479,7 +480,7 @@ describe('AvailabilitySearch', () => {
       await user.click(screen.getByRole('button', { name: 'Try again' }))
       await screen.findByText('Showing 2 of 3')
       await user.click(screen.getByRole('button', { name: 'Show more' }))
-      await screen.findByText('Evans 204')
+      await screen.findByText('Room 204')
 
       expect(requestedUrl(fetchMock, 2).searchParams.get('building_id')).toBe(
         '2',
@@ -522,6 +523,88 @@ describe('AvailabilitySearch', () => {
         )
       },
     )
+  })
+
+  describe('building groups', () => {
+    const evans = (id: number, overrides: Partial<AvailabilityResult> = {}) =>
+      room(id, {
+        building_id: 2,
+        building_code: 'EVANS',
+        building_name: 'Evans',
+        ...overrides,
+      })
+
+    it("lists each building's rooms under its name, in order", async () => {
+      stubResponses(() =>
+        jsonResponse(page([room(1), room(2), evans(3), evans(4)])),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '4 rooms free now' })
+
+      expect(
+        screen
+          .getAllByRole('heading', { level: 3 })
+          .map((heading) => heading.textContent),
+      ).toEqual(['Dwinelle', 'Evans'])
+      const evansGroup = screen.getByRole('region', { name: 'Evans' })
+      expect(within(evansGroup).getAllByRole('listitem')).toHaveLength(2)
+      expect(evansGroup).toHaveTextContent('Room 203')
+    })
+
+    it('keeps a building split across pages in one group', async () => {
+      const user = userEvent.setup()
+      stubResponses(
+        () => jsonResponse(page([room(1), evans(2)], { total: 3 })),
+        () => jsonResponse(page([evans(3)], { total: 3, offset: 2 })),
+      )
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByText('Showing 2 of 3')
+
+      await user.click(screen.getByRole('button', { name: 'Show more' }))
+      await screen.findByText('Room 203')
+
+      const evansGroup = screen.getByRole('region', { name: 'Evans' })
+      expect(within(evansGroup).getAllByRole('listitem')).toHaveLength(2)
+      expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(2)
+    })
+
+    it("shows the distance and directions when they're known", async () => {
+      stubApi({
+        buildings: () =>
+          jsonResponse({
+            results: [
+              { ...BUILDINGS[0] },
+              { ...BUILDINGS[1], latitude: 37.87362, longitude: -122.25768 },
+            ],
+          }),
+        availability: [
+          () =>
+            jsonResponse(
+              page([
+                room(1, { distance_meters: null }),
+                evans(2, { distance_meters: 416 }),
+              ]),
+            ),
+        ],
+      })
+      render(<AvailabilitySearch termId={3} />)
+
+      const link = await screen.findByRole('link', {
+        name: 'Directions to Evans',
+      })
+      const url = new URL(link.getAttribute('href') ?? '')
+      expect(url.origin + url.pathname).toBe('https://www.google.com/maps/dir/')
+      expect(url.searchParams.get('destination')).toBe('37.87362,-122.25768')
+      expect(url.searchParams.get('travelmode')).toBe('walking')
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(screen.getByRole('region', { name: 'Evans' })).toHaveTextContent(
+        '0.3 mi',
+      )
+      // Dwinelle's location is unknown, so it has no distance or directions.
+      const dwinelle = screen.getByRole('region', { name: 'Dwinelle' })
+      expect(within(dwinelle).queryByRole('link')).not.toBeInTheDocument()
+      expect(dwinelle).not.toHaveTextContent(/\bmi\b/)
+    })
   })
 
   describe('room or building search', () => {
@@ -696,7 +779,7 @@ describe('AvailabilitySearch', () => {
       await user.type(searchField(), ' 201')
       await waitFor(() =>
         expect(
-          screen.getByRole('heading').closest('[aria-busy]'),
+          screen.getByRole('heading', { level: 2 }).closest('[aria-busy]'),
         ).toHaveAttribute('aria-busy', 'true'),
       )
       expect(
@@ -729,7 +812,7 @@ describe('AvailabilitySearch', () => {
       await user.click(screen.getByRole('button', { name: 'Try again' }))
       await screen.findByText('Showing 2 of 3')
       await user.click(screen.getByRole('button', { name: 'Show more' }))
-      await screen.findByText('Dwinelle 203')
+      await screen.findByText('Room 203')
 
       expect(requestedUrl(fetchMock, 2).searchParams.get('building')).toBe(
         'dwin',
@@ -771,7 +854,7 @@ describe('AvailabilitySearch', () => {
     expect(await screen.findByText('Showing 2 of 3')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Show more' }))
 
-    await screen.findByText('Dwinelle 203')
+    await screen.findByText('Room 203')
     expect(screen.getAllByRole('listitem')).toHaveLength(3)
     expect(requestedUrl(fetchMock, 1).searchParams.get('offset')).toBe('2')
     expect(
