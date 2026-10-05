@@ -3,45 +3,51 @@ import { DEFAULT_MINIMUM_MINUTES } from '../api/availability'
 import { termId as configuredTermId } from '../config'
 import ResultsList from './ResultsList'
 import SearchForm from './SearchForm'
-import { useAvailability } from './useAvailability'
+import { useAvailability, type SearchQuery } from './useAvailability'
+import { useBuildings } from './useBuildings'
 import styles from './AvailabilitySearch.module.css'
+
+type Filters = Omit<SearchQuery, 'when'>
+
+const DEFAULT_FILTERS: Filters = {
+  minimumMinutes: DEFAULT_MINIMUM_MINUTES,
+  buildingId: null,
+}
 
 function Search({ termId }: { termId: number }) {
   const availability = useAvailability(termId)
   const { search, query } = availability
-  const [minimumMinutes, setMinimumMinutes] = useState(DEFAULT_MINIMUM_MINUTES)
+  const buildings = useBuildings()
+  const [filters, setFilters] = useState(DEFAULT_FILTERS)
 
-  // Re-runs the latest search's time with the new minimum. A time typed into
+  // Re-runs the latest search's time with the new filters. A time typed into
   // Later but not yet submitted waits for Find rooms.
-  function changeMinimumMinutes(minutes: number) {
-    setMinimumMinutes(minutes)
-    void search({
-      when: query?.when ?? { kind: 'now' },
-      minimumMinutes: minutes,
-      buildingId: null,
-    })
+  function changeFilters(change: Partial<Filters>) {
+    const next = { ...filters, ...change }
+    setFilters(next)
+    void search({ when: query?.when ?? { kind: 'now' }, ...next })
   }
 
   // Most visits ask "what's free now?", so answer it without a tap.
   useEffect(() => {
-    void search({
-      when: { kind: 'now' },
-      minimumMinutes: DEFAULT_MINIMUM_MINUTES,
-      buildingId: null,
-    })
+    void search({ when: { kind: 'now' }, ...DEFAULT_FILTERS })
   }, [search])
 
   return (
     <section className={styles.search} aria-label="Find a room">
       <SearchForm
-        onSearch={(when) =>
-          void search({ when, minimumMinutes, buildingId: null })
+        onSearch={(when) => void search({ when, ...filters })}
+        minimumMinutes={filters.minimumMinutes}
+        onMinimumMinutesChange={(minimumMinutes) =>
+          changeFilters({ minimumMinutes })
         }
-        minimumMinutes={minimumMinutes}
-        onMinimumMinutesChange={changeMinimumMinutes}
+        buildings={buildings}
+        buildingId={filters.buildingId}
+        onBuildingChange={(buildingId) => changeFilters({ buildingId })}
       />
       <ResultsList
         {...availability}
+        buildings={buildings}
         onRetry={availability.retry}
         onLoadMore={() => void availability.loadMore()}
       />
