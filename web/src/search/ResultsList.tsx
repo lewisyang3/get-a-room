@@ -1,9 +1,9 @@
 import type {
-  ApiError,
   AvailabilityPage,
   AvailabilityResult,
   SearchWhen,
 } from '../api/availability'
+import type { ApiError } from '../api/http'
 import {
   formatClockTime,
   formatDuration,

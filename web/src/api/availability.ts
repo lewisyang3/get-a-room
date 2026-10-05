@@ -1,4 +1,5 @@
 import { apiBaseUrl } from '../config'
+import { fetchJson } from './http'
 
 /** A room with no scheduled class at the time searched. Times are `HH:MM` in
  * the term's timezone. */
@@ -28,20 +29,6 @@ export type AvailabilityPage = {
 /** When to search: right now, or at a Pacific clock time
  * (`YYYY-MM-DDTHH:MM`, no UTC offset). */
 export type SearchWhen = { kind: 'now' } | { kind: 'at'; at: string }
-
-export type ApiErrorKind = 'network' | 'not-found' | 'invalid' | 'server'
-
-export class ApiError extends Error {
-  readonly kind: ApiErrorKind
-  readonly status: number | null
-
-  constructor(kind: ApiErrorKind, message: string, status: number | null) {
-    super(message)
-    this.name = 'ApiError'
-    this.kind = kind
-    this.status = status
-  }
-}
 
 export const PAGE_SIZE = 50
 
@@ -79,12 +66,6 @@ export function availabilityUrl({
   return `${baseUrl}/availability?${params}`
 }
 
-function errorKind(status: number): ApiErrorKind {
-  if (status === 404) return 'not-found'
-  if (status === 422) return 'invalid'
-  return 'server'
-}
-
 function isAvailabilityPage(value: unknown): value is AvailabilityPage {
   if (typeof value !== 'object' || value === null) return false
   const page = value as Record<string, unknown>
@@ -97,42 +78,11 @@ function isAvailabilityPage(value: unknown): value is AvailabilityPage {
 
 /** Fetches one page of available rooms. Throws an ApiError for a failed
  * request, and rethrows the AbortError when `signal` aborts it. */
-export async function fetchAvailability(
+export function fetchAvailability(
   request: AvailabilityRequest,
 ): Promise<AvailabilityPage> {
-  let response: Response
-  try {
-    response = await fetch(availabilityUrl(request), { signal: request.signal })
-  } catch (error) {
-    if (request.signal?.aborted) throw error
-    throw new ApiError('network', 'The API could not be reached.', null)
-  }
-
-  if (!response.ok) {
-    throw new ApiError(
-      errorKind(response.status),
-      `The API responded with ${response.status}.`,
-      response.status,
-    )
-  }
-
-  let body: unknown
-  try {
-    body = await response.json()
-  } catch (error) {
-    if (request.signal?.aborted) throw error
-    throw new ApiError(
-      'server',
-      'The API returned invalid JSON.',
-      response.status,
-    )
-  }
-  if (!isAvailabilityPage(body)) {
-    throw new ApiError(
-      'server',
-      'The API returned an unexpected response.',
-      response.status,
-    )
-  }
-  return body
+  return fetchJson(availabilityUrl(request), {
+    signal: request.signal,
+    isValid: isAvailabilityPage,
+  })
 }

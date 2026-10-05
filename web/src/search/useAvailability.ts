@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ApiError,
   fetchAvailability,
   type AvailabilityPage,
   type AvailabilityResult,
   type SearchWhen,
 } from '../api/availability'
+import { ApiError } from '../api/http'
 
 /** What to search for: when, and how long a room must stay free. */
 export type SearchQuery = {

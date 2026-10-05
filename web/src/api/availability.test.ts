@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  ApiError,
   availabilityUrl,
   fetchAvailability,
   type AvailabilityPage,
 } from './availability'
+import { ApiError } from './http'
 
 const PAGE: AvailabilityPage = {
   total: 1,
