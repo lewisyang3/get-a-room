@@ -1,15 +1,21 @@
 import math
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, NamedTuple, NoReturn
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
-from sqlalchemy import ColumnElement, func, null, select
+from sqlalchemy import ColumnElement, Select, func, null, select
 from sqlalchemy.orm import Session
 
 from app.api.queries import searchable_rooms
-from app.api.schemas.availability import AvailabilityPage, AvailabilityResponse
+from app.api.schemas.availability import (
+    AvailabilityPage,
+    AvailabilityResponse,
+    BuildingAvailability,
+    BuildingAvailabilityList,
+)
 from app.api.schemas.errors import ErrorResponse, ValidationErrorResponse
 from app.db import get_db
 from app.models.models import AvailabilityInterval, Building, Room, Term
@@ -125,24 +131,39 @@ def _resolve_search(
     return moment._replace(time=moment.time.replace(second=0, microsecond=0))
 
 
-# Returns rooms that are available at a requested time, or right now.
-@router.get(
-    "",
-    response_model=AvailabilityPage,
-    summary="Find available rooms",
-    responses={
-        404: {"model": ErrorResponse, "description": "The term does not exist."},
-        422: {
-            "model": ValidationErrorResponse,
-            "description": "A parameter is invalid: a malformed or out-of-range "
-            "value, `at` combined with `day_of_week` or `time`, `day_of_week` "
-            "or `time` given without the other, a `time` with a UTC offset, a "
-            "blank text filter, or `near_latitude` or `near_longitude` given "
-            "without the other. `loc` names the parameter at fault.",
-        },
+# A search's validated parameters, shared by /availability and
+# /availability/buildings so both endpoints search the same way.
+@dataclass(frozen=True)
+class _Search:
+    term_id: int
+    day_of_week: int | None
+    requested_time: time | None
+    at: datetime | None
+    minimum_minutes: int
+    building_id: int | None
+    building_code: str | None
+    building: str | None
+    room: str | None
+    # The point to sort by distance from, or None.
+    near: tuple[float, float] | None
+
+
+# The 404 and 422 responses of every endpoint that takes a search.
+_SEARCH_RESPONSES: dict[int | str, dict[str, Any]] = {
+    404: {"model": ErrorResponse, "description": "The term does not exist."},
+    422: {
+        "model": ValidationErrorResponse,
+        "description": "A parameter is invalid: a malformed or out-of-range "
+        "value, `at` combined with `day_of_week` or `time`, `day_of_week` "
+        "or `time` given without the other, a `time` with a UTC offset, a "
+        "blank text filter, or `near_latitude` or `near_longitude` given "
+        "without the other. `loc` names the parameter at fault.",
     },
-)
-def get_available_rooms(
+}
+
+
+# Reads and validates the search parameters, as a FastAPI dependency.
+def search_params(
     # Identifies the academic term being searched.
     term_id: int = Query(..., description="The term to search."),
     # Uses 0 for Monday through 6 for Sunday.
@@ -223,27 +244,7 @@ def get_available_rooms(
         description="Sort by distance from this longitude. Requires "
         "`near_latitude`.",
     ),
-    # Caps how many rooms one response returns.
-    limit: int = Query(50, ge=1, le=200, description="Rooms per page, 1-200."),
-    # Skips this many rooms, for later pages.
-    offset: int = Query(0, ge=0, description="Rooms to skip before this page."),
-    # Gets a database session from FastAPI.
-    db: Session = Depends(get_db),
-    # Gets the current time from FastAPI.
-    now: datetime = Depends(get_now),
-) -> AvailabilityPage:
-    """Rooms with no scheduled class at the requested time, one page at a time.
-
-    Searches at a date and time (`at`), at a weekday and time every week
-    (`day_of_week` + `time`), or, with none of these, right now in the
-    term's own timezone. Every search is to the minute, and a date outside
-    the term's dates returns no rooms. Availability only covers
-    07:00-22:00, so searches outside that window return no rooms. All
-    filters apply together; results are sorted by building name, then room
-    number. With `near_latitude` and `near_longitude`, they're sorted by
-    approximate distance instead, nearest building first and buildings with
-    no coordinates last, each building's rooms kept together.
-    """
+) -> _Search:
     # Allows only one way of saying when to search.
     if at is not None and (day_of_week is not None or requested_time is not None):
         _invalid("at", "at can't be combined with day_of_week or time", at)
@@ -279,37 +280,54 @@ def get_available_rooms(
     building = _clean_text_filter("building", building)
     room = _clean_text_filter("room", room)
 
+    return _Search(
+        term_id=term_id,
+        day_of_week=day_of_week,
+        requested_time=requested_time,
+        at=at,
+        minimum_minutes=minimum_minutes,
+        building_id=building_id,
+        building_code=building_code,
+        building=building,
+        room=room,
+        near=near,
+    )
+
+
+# What a search matches, and the moment it looked at.
+class _Matches(NamedTuple):
+    moment: _SearchMoment
+    # Each matching interval with its room, building, and distance, or None
+    # when no room can match.
+    statement: Select[tuple[AvailabilityInterval, Room, Building, float]] | None
+    # Each building's distance from the search's point, or null without one.
+    distance: ColumnElement[float]
+
+
+# Resolves a search's moment and builds the query for the intervals it
+# matches, before any grouping, sorting, or paging.
+def _matching_intervals(db: Session, search: _Search, now: datetime) -> _Matches:
     # Looks up the term so a missing one isn't mistaken for "no rooms free".
-    term = db.get(Term, term_id)
+    term = db.get(Term, search.term_id)
     if term is None:
-        raise HTTPException(status_code=404, detail=f"term {term_id} not found")
+        raise HTTPException(status_code=404, detail=f"term {search.term_id} not found")
 
     # Resolves the weekday and time to search, in the term's timezone.
-    moment = _resolve_search(term, now, at, day_of_week, requested_time)
+    moment = _resolve_search(
+        term, now, search.at, search.day_of_week, search.requested_time
+    )
     day_of_week, requested_time = moment.day_of_week, moment.time
 
-    # Builds a page of results for the resolved weekday and time.
-    def page(total: int, results: list[AvailabilityResponse]) -> AvailabilityPage:
-        return AvailabilityPage(
-            total=total,
-            limit=limit,
-            offset=offset,
-            date=moment.date,
-            day_of_week=day_of_week,
-            time=requested_time.strftime("%H:%M"),
-            results=results,
-        )
+    # Each building's distance from the point to sort from, if there is one.
+    distance = _distance_meters(*search.near) if search.near is not None else null()
 
     # Finds the earliest end time that still leaves the minimum free time.
     threshold = datetime.combine(date.min, requested_time) + timedelta(
-        minutes=minimum_minutes
+        minutes=search.minimum_minutes
     )
     # A minimum that runs past midnight can't be met by any room.
     if moment.outside_term or threshold.date() != date.min:
-        return page(0, [])
-
-    # Each building's distance from the point to sort from, if there is one.
-    distance = _distance_meters(*near) if near is not None else null()
+        return _Matches(moment, None, distance)
 
     # Builds a query joining availability intervals to rooms and buildings.
     statement = (
@@ -317,7 +335,7 @@ def get_available_rooms(
         .join(Room, AvailabilityInterval.room_id == Room.room_id)
         .join(Building, Room.building_id == Building.building_id)
         .where(
-            AvailabilityInterval.term_id == term_id,
+            AvailabilityInterval.term_id == search.term_id,
             AvailabilityInterval.day_of_week == day_of_week,
             AvailabilityInterval.start_time <= requested_time,
             AvailabilityInterval.end_time > requested_time,
@@ -328,18 +346,88 @@ def get_available_rooms(
     )
 
     # Adds the building filter only when one was provided.
-    if building_id is not None:
-        statement = statement.where(Building.building_id == building_id)
+    if search.building_id is not None:
+        statement = statement.where(Building.building_id == search.building_id)
     # Adds the remaining filters the same way; they all apply together.
-    if building_code is not None:
+    if search.building_code is not None:
         statement = statement.where(
-            func.lower(Building.short_code) == building_code.lower()
+            func.lower(Building.short_code) == search.building_code.lower()
         )
-    if building is not None:
+    if search.building is not None:
         # autoescape matches % and _ literally instead of as wildcards.
-        statement = statement.where(Building.name.icontains(building, autoescape=True))
-    if room is not None:
-        statement = statement.where(func.lower(Room.room_number) == room.lower())
+        statement = statement.where(
+            Building.name.icontains(search.building, autoescape=True)
+        )
+    if search.room is not None:
+        statement = statement.where(func.lower(Room.room_number) == search.room.lower())
+
+    return _Matches(moment, statement, distance)
+
+
+# Which page of rooms to return.
+class _Paging(NamedTuple):
+    limit: int
+    offset: int
+
+
+# Reads the paging parameters. A dependency rather than plain parameters so
+# the docs list them after the search parameters, which are a dependency too.
+def paging_params(
+    # Caps how many rooms one response returns.
+    limit: int = Query(50, ge=1, le=200, description="Rooms per page, 1-200."),
+    # Skips this many rooms, for later pages.
+    offset: int = Query(0, ge=0, description="Rooms to skip before this page."),
+) -> _Paging:
+    return _Paging(limit, offset)
+
+
+# Returns rooms that are available at a requested time, or right now.
+@router.get(
+    "",
+    response_model=AvailabilityPage,
+    summary="Find available rooms",
+    responses=_SEARCH_RESPONSES,
+)
+def get_available_rooms(
+    # Reads and validates the search parameters.
+    search: _Search = Depends(search_params),
+    # Reads the page to return.
+    paging: _Paging = Depends(paging_params),
+    # Gets a database session from FastAPI.
+    db: Session = Depends(get_db),
+    # Gets the current time from FastAPI.
+    now: datetime = Depends(get_now),
+) -> AvailabilityPage:
+    """Rooms with no scheduled class at the requested time, one page at a time.
+
+    Searches at a date and time (`at`), at a weekday and time every week
+    (`day_of_week` + `time`), or, with none of these, right now in the
+    term's own timezone. Every search is to the minute, and a date outside
+    the term's dates returns no rooms. Availability only covers
+    07:00-22:00, so searches outside that window return no rooms. All
+    filters apply together; results are sorted by building name, then room
+    number. With `near_latitude` and `near_longitude`, they're sorted by
+    approximate distance instead, nearest building first and buildings with
+    no coordinates last, each building's rooms kept together.
+    """
+    limit, offset = paging
+    moment, statement, distance = _matching_intervals(db, search, now)
+    requested_time = moment.time
+
+    # Builds a page of results for the resolved weekday and time.
+    def page(total: int, results: list[AvailabilityResponse]) -> AvailabilityPage:
+        return AvailabilityPage(
+            total=total,
+            limit=limit,
+            offset=offset,
+            date=moment.date,
+            day_of_week=moment.day_of_week,
+            time=requested_time.strftime("%H:%M"),
+            results=results,
+        )
+
+    if statement is None:
+        return page(0, [])
 
     # Counts every match, before paging.
     total = db.scalar(select(func.count()).select_from(statement.subquery()))
@@ -350,7 +438,7 @@ def get_available_rooms(
     # same distance away don't interleave their rooms.
     order = (
         (Building.name, Room.room_number, Room.room_id)
-        if near is None
+        if search.near is None
         else (
             distance.asc().nulls_last(),
             Building.name,
@@ -394,3 +482,94 @@ def get_available_rooms(
 
     # Returns this page of available rooms.
     return page(total, results)
+
+
+# Returns, for each building with a room free, how many are free and for how
+# long.
+@router.get(
+    "/buildings",
+    response_model=BuildingAvailabilityList,
+    summary="Summarise available rooms by building",
+    responses=_SEARCH_RESPONSES,
+)
+def get_available_buildings(
+    # Reads and validates the search parameters.
+    search: _Search = Depends(search_params),
+    # Gets a database session from FastAPI.
+    db: Session = Depends(get_db),
+    # Gets the current time from FastAPI.
+    now: datetime = Depends(get_now),
+) -> BuildingAvailabilityList:
+    """Each building with a room free at the requested time: how many rooms
+    are free, and the longest any of them stays free.
+
+    Takes the same search as `/availability`, without paging, and every
+    building is counted, not just one page's worth. A building's
+    `free_rooms` is the `total` `/availability` reports for the same search
+    with its `building_id`. Buildings with no matching room are left out;
+    `/buildings` lists them all. Sorted by building name, or with
+    `near_latitude` and `near_longitude` by approximate distance, nearest
+    first and buildings with no coordinates last.
+    """
+    moment, statement, distance = _matching_intervals(db, search, now)
+    requested_time = moment.time
+
+    # Builds the response for the resolved weekday and time.
+    def summary(results: list[BuildingAvailability]) -> BuildingAvailabilityList:
+        return BuildingAvailabilityList(
+            date=moment.date,
+            day_of_week=moment.day_of_week,
+            time=requested_time.strftime("%H:%M"),
+            results=results,
+        )
+
+    if statement is None:
+        return summary([])
+
+    # Groups the matching intervals by building. Grouping by the primary key
+    # lets Postgres select the building's other columns too.
+    statement = (
+        statement.with_only_columns(
+            Building.building_id,
+            Building.short_code,
+            Building.name,
+            # Distinct, so the count is rooms rather than intervals.
+            func.count(Room.room_id.distinct()),
+            func.max(AvailabilityInterval.end_time),
+            distance,
+        )
+        .group_by(Building.building_id)
+        .order_by(
+            # Same order as /availability's buildings; the id breaks ties.
+            *((distance.asc().nulls_last(),) if search.near is not None else ()),
+            Building.name,
+            Building.building_id,
+        )
+    )
+
+    return summary(
+        [
+            BuildingAvailability(
+                building_id=building_id,
+                building_code=building_code,
+                building_name=building_name,
+                free_rooms=free_rooms,
+                longest_free_until=free_until.strftime("%H:%M"),
+                longest_free_minutes=int(
+                    _minutes_since_midnight(free_until)
+                    - _minutes_since_midnight(requested_time)
+                ),
+                distance_meters=(
+                    round(distance_meters) if distance_meters is not None else None
+                ),
+            )
+            for (
+                building_id,
+                building_code,
+                building_name,
+                free_rooms,
+                free_until,
+                distance_meters,
+            ) in db.execute(statement)
+        ]
+    )

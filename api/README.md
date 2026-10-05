@@ -209,6 +209,36 @@ parameter at fault:
 `/docs` is the full reference: every parameter, response field, example, and
 error.
 
+## Summarising availability by building
+
+`GET /availability/buildings` takes the same search as `/availability`, except
+`limit` and `offset`, and returns one row per building with a room free: how
+many rooms are free and the longest any of them stays free. It's what a map
+needs for per-building counts, without paging through every room.
+
+```bash
+# Right now, nearest to a point first:
+curl 'http://localhost:8000/availability/buildings?term_id=1&near_latitude=37.8736&near_longitude=-122.2577'
+```
+
+```json
+{"date": "2025-10-17", "day_of_week": 4, "time": "14:30",
+ "results": [{"building_id": 2, "building_code": "DWINELLE",
+              "building_name": "Dwinelle", "free_rooms": 6,
+              "longest_free_until": "22:00", "longest_free_minutes": 450,
+              "distance_meters": null}]}
+```
+
+- Every building is counted, not one page's worth. A building's `free_rooms`
+  is the `total` `/availability` reports for the same search with that
+  `building_id`.
+- `longest_free_until` is the latest `available_until` among those rooms, and
+  `longest_free_minutes` the minutes from the time searched until then.
+- Buildings with no matching room are left out; `/buildings` lists them all.
+- Sorting, `distance_meters`, the search moment, and errors work as for
+  `/availability`: by name, or nearest first with `near_latitude` and
+  `near_longitude`.
+
 ## Listing buildings
 
 `GET /buildings` returns every building `/availability` searches: buildings

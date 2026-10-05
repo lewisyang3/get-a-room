@@ -6,7 +6,7 @@ These read the generated spec only, so they don't need a database.
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.schemas.availability import AvailabilityPage
+from app.api.schemas.availability import AvailabilityPage, BuildingAvailabilityList
 from app.api.schemas.buildings import BuildingList
 from app.api.schemas.errors import ErrorResponse, ValidationErrorResponse
 from app.api.schemas.health import HealthResponse
@@ -14,6 +14,7 @@ from app.main import app
 
 OWN_SCHEMAS = [
     AvailabilityPage,
+    BuildingAvailabilityList,
     BuildingList,
     ErrorResponse,
     ValidationErrorResponse,
@@ -50,6 +51,7 @@ def test_every_field_of_our_schemas_has_a_description(spec: dict):
     schemas = spec["components"]["schemas"]
     our_names = {
         "AvailabilityResponse",
+        "BuildingAvailability",
         "BuildingResponse",
         "ValidationErrorDetail",
     } | {model.__name__ for model in OWN_SCHEMAS}
@@ -75,6 +77,17 @@ def test_availability_documents_its_responses(spec: dict):
         return responses[code]["content"]["application/json"]["schema"]["$ref"]
 
     assert schema_ref("200").endswith("/AvailabilityPage")
+    assert schema_ref("404").endswith("/ErrorResponse")
+    assert schema_ref("422").endswith("/ValidationErrorResponse")
+
+
+def test_availability_buildings_documents_its_responses(spec: dict):
+    responses = spec["paths"]["/availability/buildings"]["get"]["responses"]
+
+    def schema_ref(code: str) -> str:
+        return responses[code]["content"]["application/json"]["schema"]["$ref"]
+
+    assert schema_ref("200").endswith("/BuildingAvailabilityList")
     assert schema_ref("404").endswith("/ErrorResponse")
     assert schema_ref("422").endswith("/ValidationErrorResponse")
 
