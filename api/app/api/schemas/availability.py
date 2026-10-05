@@ -24,6 +24,12 @@ class AvailabilityResponse(BaseModel):
     available_minutes: int = Field(
         description="Whole minutes from `available_from` to `available_until`."
     )
+    distance_meters: int | None = Field(
+        default=None,
+        description="The building's approximate distance in metres from "
+        "`near_latitude`/`near_longitude`, or null when those weren't given or "
+        "the building has no coordinates.",
+    )
 
 
 class AvailabilityPage(BaseModel):
@@ -49,6 +55,7 @@ class AvailabilityPage(BaseModel):
                             "available_from": "14:30",
                             "available_until": "17:00",
                             "available_minutes": 150,
+                            "distance_meters": None,
                         }
                     ],
                 }

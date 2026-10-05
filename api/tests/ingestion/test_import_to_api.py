@@ -58,6 +58,7 @@ def test_an_imported_room_is_available_until_its_next_meeting(
         "available_from": "10:00",
         "available_until": "14:00",
         "available_minutes": 240,
+        "distance_meters": None,
     }
     assert rooms[("Valley Life Sciences", "3030")]["available_until"] == "22:00"
 

@@ -1,10 +1,11 @@
+import math
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, NamedTuple, NoReturn
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, null, select
 from sqlalchemy.orm import Session
 
 from app.api.queries import searchable_rooms
@@ -57,6 +58,20 @@ def _clean_text_filter(name: str, value: str | None) -> str | None:
     if not stripped:
         _invalid(name, f"{name} must not be blank", value)
     return stripped
+
+
+# Metres per degree of latitude, and of longitude at the equator.
+_METERS_PER_DEGREE = 111_195
+
+
+# A building's distance in metres from a point, or null when the building
+# has no coordinates. An equirectangular approximation: within 1% over the
+# few kilometres of a campus, and plain SQL, with no PostGIS.
+def _distance_meters(latitude: float, longitude: float) -> ColumnElement[float]:
+    longitude_scale = math.cos(math.radians(latitude))
+    north = Building.latitude - latitude
+    east = (Building.longitude - longitude) * longitude_scale
+    return func.sqrt(north * north + east * east) * _METERS_PER_DEGREE
 
 
 # The moment a search looks at, in the term's timezone.
@@ -121,8 +136,9 @@ def _resolve_search(
             "model": ValidationErrorResponse,
             "description": "A parameter is invalid: a malformed or out-of-range "
             "value, `at` combined with `day_of_week` or `time`, `day_of_week` "
-            "or `time` given without the other, a `time` with a UTC offset, or "
-            "a blank text filter. `loc` names the parameter at fault.",
+            "or `time` given without the other, a `time` with a UTC offset, a "
+            "blank text filter, or `near_latitude` or `near_longitude` given "
+            "without the other. `loc` names the parameter at fault.",
         },
     },
 )
@@ -192,6 +208,21 @@ def get_available_rooms(
         description="Only return rooms with exactly this room number, ignoring "
         "case, e.g. `242`.",
     ),
+    # Optionally sorts by distance from a point, nearest first.
+    near_latitude: float | None = Query(
+        None,
+        ge=-90,
+        le=90,
+        description="Sort by distance from this latitude, nearest first, and "
+        "return each room's `distance_meters`. Requires `near_longitude`.",
+    ),
+    near_longitude: float | None = Query(
+        None,
+        ge=-180,
+        le=180,
+        description="Sort by distance from this longitude. Requires "
+        "`near_latitude`.",
+    ),
     # Caps how many rooms one response returns.
     limit: int = Query(50, ge=1, le=200, description="Rooms per page, 1-200."),
     # Skips this many rooms, for later pages.
@@ -209,7 +240,9 @@ def get_available_rooms(
     the term's dates returns no rooms. Availability only covers
     07:00-22:00, so searches outside that window return no rooms. All
     filters apply together; results are sorted by building name, then room
-    number.
+    number. With `near_latitude` and `near_longitude`, they're sorted by
+    approximate distance instead, nearest building first and buildings with
+    no coordinates last, each building's rooms kept together.
     """
     # Allows only one way of saying when to search.
     if at is not None and (day_of_week is not None or requested_time is not None):
@@ -227,6 +260,19 @@ def get_available_rooms(
             "time must be a local time in the term's timezone, without a UTC offset",
             requested_time,
         )
+
+    # Requires both coordinates of the point to sort from, or neither.
+    if near_latitude is not None and near_longitude is None:
+        _invalid(
+            "near_longitude", "near_longitude is required with near_latitude", None
+        )
+    if near_longitude is not None and near_latitude is None:
+        _invalid("near_latitude", "near_latitude is required with near_longitude", None)
+    near = (
+        (near_latitude, near_longitude)
+        if near_latitude is not None and near_longitude is not None
+        else None
+    )
 
     # Trims the text filters, rejecting ones that are only whitespace.
     building_code = _clean_text_filter("building_code", building_code)
@@ -262,9 +308,12 @@ def get_available_rooms(
     if moment.outside_term or threshold.date() != date.min:
         return page(0, [])
 
+    # Each building's distance from the point to sort from, if there is one.
+    distance = _distance_meters(*near) if near is not None else null()
+
     # Builds a query joining availability intervals to rooms and buildings.
     statement = (
-        select(AvailabilityInterval, Room, Building)
+        select(AvailabilityInterval, Room, Building, distance.label("distance"))
         .join(Room, AvailabilityInterval.room_id == Room.room_id)
         .join(Building, Room.building_id == Building.building_id)
         .where(
@@ -296,12 +345,21 @@ def get_available_rooms(
     total = db.scalar(select(func.count()).select_from(statement.subquery()))
 
     # Sorts by building name and room number, then id as a tiebreak, and
-    # takes one page so the order stays the same from page to page.
-    statement = (
-        statement.order_by(Building.name, Room.room_number, Room.room_id)
-        .limit(limit)
-        .offset(offset)
+    # takes one page so the order stays the same from page to page. Sorting
+    # by distance puts the building name and id after it, so buildings the
+    # same distance away don't interleave their rooms.
+    order = (
+        (Building.name, Room.room_number, Room.room_id)
+        if near is None
+        else (
+            distance.asc().nulls_last(),
+            Building.name,
+            Building.building_id,
+            Room.room_number,
+            Room.room_id,
+        )
     )
+    statement = statement.order_by(*order).limit(limit).offset(offset)
 
     # Runs the query and retrieves the matching rows.
     rows = db.execute(statement).all()
@@ -310,7 +368,7 @@ def get_available_rooms(
     results: list[AvailabilityResponse] = []
 
     # Processes each available interval.
-    for interval, matched_room, matched_building in rows:
+    for interval, matched_room, matched_building, distance_meters in rows:
         # Calculates the number of available minutes.
         available_minutes = int(
             _minutes_since_midnight(interval.end_time)
@@ -328,6 +386,9 @@ def get_available_rooms(
                 available_from=requested_time.strftime("%H:%M"),
                 available_until=interval.end_time.strftime("%H:%M"),
                 available_minutes=available_minutes,
+                distance_meters=(
+                    round(distance_meters) if distance_meters is not None else None
+                ),
             )
         )
 
