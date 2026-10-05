@@ -62,6 +62,8 @@ describe('availabilityUrl', () => {
         when: { kind: 'now' },
         minimumMinutes: 60,
         buildingId: null,
+        building: null,
+        room: null,
         baseUrl: 'http://api.test',
       }),
     )
@@ -82,6 +84,8 @@ describe('availabilityUrl', () => {
         when: { kind: 'at', at: '2026-10-05T14:30' },
         minimumMinutes: 120,
         buildingId: 4,
+        building: 'Dwinelle Hall',
+        room: '242',
         offset: 50,
         baseUrl: 'http://api.test',
       }),
@@ -90,6 +94,8 @@ describe('availabilityUrl', () => {
     expect(url.searchParams.get('at')).toBe('2026-10-05T14:30')
     expect(url.searchParams.get('minimum_minutes')).toBe('120')
     expect(url.searchParams.get('building_id')).toBe('4')
+    expect(url.searchParams.get('building')).toBe('Dwinelle Hall')
+    expect(url.searchParams.get('room')).toBe('242')
     expect(url.searchParams.get('offset')).toBe('50')
   })
 })
@@ -100,6 +106,8 @@ describe('fetchAvailability', () => {
     when: { kind: 'now' } as const,
     minimumMinutes: 60,
     buildingId: null,
+    building: null,
+    room: null,
   }
 
   it('returns the page', async () => {

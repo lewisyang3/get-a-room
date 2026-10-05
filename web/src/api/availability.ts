@@ -45,6 +45,10 @@ export type AvailabilityRequest = {
   minimumMinutes: number
   /** Only rooms in this building, or every building when null. */
   buildingId: number | null
+  /** Only rooms in buildings whose name contains this text. */
+  building: string | null
+  /** Only rooms with exactly this room number. */
+  room: string | null
   offset?: number
   limit?: number
   signal?: AbortSignal
@@ -56,6 +60,8 @@ export function availabilityUrl({
   when,
   minimumMinutes,
   buildingId,
+  building,
+  room,
   offset = 0,
   limit = PAGE_SIZE,
   baseUrl = apiBaseUrl,
@@ -65,6 +71,8 @@ export function availabilityUrl({
   if (when.kind === 'at') params.set('at', when.at)
   params.set('minimum_minutes', String(minimumMinutes))
   if (buildingId !== null) params.set('building_id', String(buildingId))
+  if (building !== null) params.set('building', building)
+  if (room !== null) params.set('room', room)
   params.set('limit', String(limit))
   params.set('offset', String(offset))
   return `${baseUrl}/availability?${params}`

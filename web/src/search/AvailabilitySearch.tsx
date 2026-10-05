@@ -12,6 +12,7 @@ type Filters = Omit<SearchQuery, 'when'>
 const DEFAULT_FILTERS: Filters = {
   minimumMinutes: DEFAULT_MINIMUM_MINUTES,
   buildingId: null,
+  text: '',
 }
 
 function Search({ termId }: { termId: number }) {
