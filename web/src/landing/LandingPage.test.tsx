@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { expectNoAxeViolations } from '../test/axe'
 import LandingPage from './LandingPage'
 
 // The note's sentence is split by the "class schedule" link, so tests match
@@ -49,6 +50,10 @@ describe('LandingPage', () => {
     it('has banner and main landmarks', () => {
       expect(screen.getByRole('banner')).toBeInTheDocument()
       expect(screen.getByRole('main')).toBeInTheDocument()
+    })
+
+    it('passes axe (GAR-038)', async () => {
+      await expectNoAxeViolations()
     })
 
     it('links to the source class schedule', () => {

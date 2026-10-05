@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AvailabilityPage, AvailabilityResult } from '../api/availability'
 import type { Building } from '../api/buildings'
+import { expectNoAxeViolations } from '../test/axe'
 import AvailabilitySearch from './AvailabilitySearch'
 
 function room(id: number, overrides: Partial<AvailabilityResult> = {}) {
@@ -1112,5 +1113,116 @@ describe('AvailabilitySearch', () => {
       "Search isn't set up yet",
     )
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  // GAR-038: each state passes axe. The component is rendered without the
+  // page's landmarks, so the region rule is left to the landing page test.
+  describe('accessibility', () => {
+    const check = () => expectNoAxeViolations(document.body, { region: false })
+    const LOCATED_BUILDINGS = () =>
+      jsonResponse({
+        results: [
+          { ...BUILDINGS[0], latitude: 37.87073, longitude: -122.26074 },
+          { ...BUILDINGS[1], latitude: 37.87362, longitude: -122.25768 },
+        ],
+      })
+    const evans = (id: number, overrides: Partial<AvailabilityResult> = {}) =>
+      room(id, {
+        building_id: 2,
+        building_code: 'EVANS',
+        building_name: 'Evans',
+        ...overrides,
+      })
+
+    it('while the first search loads', async () => {
+      stubResponses(() => new Promise<Response>(() => {}))
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('combobox', { name: 'Building' })
+
+      await check()
+    })
+
+    it('with results in groups, directions and Show more', async () => {
+      stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [
+          () => jsonResponse(page([room(1), room(2), evans(3)], { total: 60 })),
+        ],
+      })
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('link', { name: /Directions to Evans/ })
+      await screen.findByRole('button', { name: 'Show more' })
+
+      await check()
+    })
+
+    it('with no results', async () => {
+      stubResponses(() => jsonResponse(page([])))
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: 'No rooms free now' })
+
+      await check()
+    })
+
+    it('with an error', async () => {
+      stubResponses(() => jsonResponse({}, 503))
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('button', { name: 'Try again' })
+
+      await check()
+    })
+
+    it('when searching a later time', async () => {
+      const user = userEvent.setup()
+      stubResponses(() => jsonResponse(page([room(1)])))
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.click(screen.getByRole('radio', { name: 'Later' }))
+      expect(screen.getByLabelText('Date and time')).toBeInTheDocument()
+
+      await check()
+    })
+
+    it('when sorted by nearest', async () => {
+      const user = userEvent.setup()
+      stubGeolocation({ latitude: 37.87362, longitude: -122.25768 })
+      stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [
+          () => jsonResponse(page([room(1), evans(2)])),
+          () =>
+            jsonResponse(
+              page([
+                evans(2, { distance_meters: 3 }),
+                room(1, { distance_meters: 416 }),
+              ]),
+            ),
+        ],
+      })
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '2 rooms free now' })
+
+      await user.click(await screen.findByRole('radio', { name: 'Nearest' }))
+      await screen.findByText('For at least an hour · Nearest first')
+
+      await check()
+    })
+
+    it("when the location can't be found", async () => {
+      const user = userEvent.setup()
+      stubGeolocation('denied')
+      stubApi({
+        buildings: LOCATED_BUILDINGS,
+        availability: [() => jsonResponse(page([room(1)]))],
+      })
+      render(<AvailabilitySearch termId={3} />)
+      await screen.findByRole('heading', { name: '1 room free now' })
+
+      await user.click(await screen.findByRole('radio', { name: 'Nearest' }))
+      await screen.findByText(/Couldn't get your location/)
+
+      await check()
+    })
   })
 })
