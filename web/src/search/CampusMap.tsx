@@ -50,6 +50,26 @@ function markerContent(building: Building, counts: FreeRoomCounts) {
   } as const
 }
 
+/** The parts of a Mapbox error event that say what failed. A request that
+ * failed has the response's status, and an error about a source or one of
+ * its tiles names the source. */
+type MapError = {
+  error?: Error & { status?: unknown }
+  sourceId?: string
+  tile?: unknown
+}
+
+/** Whether an error before the map loads means it never will: Mapbox
+ * rejecting the token, which fails every request, or the style failing
+ * before it loads. A failed tile or source, e.g. on a patchy network, just
+ * leaves a gap, so the map is kept. */
+function stopsTheMap(event: MapError, styleLoaded: boolean): boolean {
+  const status = event.error?.status
+  if (status === 401 || status === 403) return true
+  if (event.sourceId !== undefined || event.tile !== undefined) return false
+  return !styleLoaded
+}
+
 /** A Mapbox map of campus with one button per building, showing how many
  * rooms it has free. Choosing a building's button selects it; choosing it
  * again goes back to every building. */
@@ -118,15 +138,18 @@ function CampusMap({
     }
     mapRef.current = map
 
-    // An error before the map first loads, e.g. Mapbox rejecting the token or
-    // the style, leaves it blank. Errors after that, e.g. a missing tile,
-    // leave a working map, so they're ignored.
+    // Some errors before the map first loads leave it blank; see
+    // stopsTheMap. Errors after that leave a working map, so they're ignored.
+    let styleLoaded = false
     let loaded = false
+    map.once('style.load', () => {
+      styleLoaded = true
+    })
     map.once('load', () => {
       loaded = true
     })
-    map.on('error', () => {
-      if (!loaded) unavailable()
+    map.on('error', (event: MapError) => {
+      if (!loaded && stopsTheMap(event, styleLoaded)) unavailable()
     })
 
     // Places a marker for each building with a location.

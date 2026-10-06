@@ -1233,7 +1233,7 @@ describe('AvailabilitySearch', () => {
       await screen.findByRole('button', { name: 'Evans: 3 rooms free' })
       const countsBefore = fetchMock.counts.mock.calls.length
 
-      act(() => mapbox.map.emit('error', { error: new Error('Unauthorized') }))
+      act(() => mapbox.map.emit('error', { error: { status: 401 } }))
 
       expect(
         await screen.findByText(

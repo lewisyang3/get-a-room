@@ -181,12 +181,45 @@ describe('CampusMap', () => {
     expect(onUnavailable).toHaveBeenCalled()
   })
 
-  it("reports it's unavailable when Mapbox can't load it", () => {
+  it("reports it's unavailable when Mapbox rejects the token", () => {
     const { onUnavailable } = renderMap()
 
-    mapbox.map.emit('error', { error: new Error('Unauthorized') })
+    mapbox.map.emit('error', {
+      error: { status: 401 },
+      sourceId: 'composite',
+      tile: {},
+    })
 
     expect(onUnavailable).toHaveBeenCalled()
+  })
+
+  it("reports it's unavailable when the style fails to load", () => {
+    const { onUnavailable } = renderMap()
+
+    mapbox.map.emit('error', { error: new Error('Failed to fetch') })
+
+    expect(onUnavailable).toHaveBeenCalled()
+  })
+
+  it('keeps the map when a tile fails before it loads', () => {
+    const { onUnavailable } = renderMap()
+
+    mapbox.map.emit('error', {
+      error: { status: 500 },
+      sourceId: 'composite',
+      tile: {},
+    })
+
+    expect(onUnavailable).not.toHaveBeenCalled()
+  })
+
+  it('keeps the map when something else fails after the style loads', () => {
+    const { onUnavailable } = renderMap()
+
+    mapbox.map.emit('style.load')
+    mapbox.map.emit('error', { error: new Error('Failed to load sprite') })
+
+    expect(onUnavailable).not.toHaveBeenCalled()
   })
 
   it('keeps the map after an error once it has loaded', () => {
