@@ -20,6 +20,8 @@ type Props = AvailabilityState & {
   buildings: Building[] | null
   onRetry: () => void
   onLoadMore: () => void
+  /** Clears the building the results are limited to. */
+  onShowAllBuildings: () => void
 }
 
 const ERROR_MESSAGES: Record<ApiError['kind'], string> = {
@@ -205,11 +207,13 @@ function Summary({
   )
 }
 
-// Where focus goes once a Show more or Try again finishes: the first new
-// row, or the results of the retried search.
+// Where focus goes once a Show more, Try again or Show all buildings
+// finishes: the first new row, or the results of the search. 'next' is a
+// search about to start, followed as 'results' once it has.
 type PendingFocus =
   | { kind: 'row'; index: number }
   | { kind: 'results'; query: SearchQuery | null }
+  | { kind: 'next' }
 
 function ResultsList({
   status,
@@ -223,20 +227,28 @@ function ResultsList({
   loadMoreError,
   onRetry,
   onLoadMore,
+  onShowAllBuildings,
 }: Props) {
   const id = useId()
   const resultsRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLHeadingElement>(null)
   const retryRef = useRef<HTMLButtonElement>(null)
   const moreRef = useRef<HTMLButtonElement>(null)
-  // Show more is disabled while it loads, and Try again goes away, so
-  // browsers drop focus to the page. Moving it on afterwards keeps keyboard
-  // and screen reader users in their place.
+  // Show more is disabled while it loads, and Try again and Show all
+  // buildings go away, so browsers drop focus to the page. Moving it on
+  // afterwards keeps keyboard and screen reader users in their place.
   const pendingFocus = useRef<PendingFocus | null>(null)
 
   useEffect(() => {
     const target = pendingFocus.current
     if (target === null) return
+    if (target.kind === 'next') {
+      // Once the search has started, follow it like a retry.
+      if (status === 'loading') {
+        pendingFocus.current = { kind: 'results', query }
+      }
+      return
+    }
     if (target.kind === 'results') {
       // A new search replaced the retry, so focus stays where the user is.
       if (query !== target.query) pendingFocus.current = null
@@ -265,6 +277,11 @@ function ResultsList({
     // The same query is searched again; a new search would be a new object.
     pendingFocus.current = { kind: 'results', query }
     onRetry()
+  }
+
+  function showAllBuildings() {
+    pendingFocus.current = { kind: 'next' }
+    onShowAllBuildings()
   }
 
   function loadMore() {
@@ -318,6 +335,18 @@ function ResultsList({
           page={page}
         />
       </div>
+      {/* Outside the live region, so it isn't announced with each count. The
+          map can choose a building, and this clears it with or without the
+          map. */}
+      {resultsQuery.buildingId !== null && (
+        <button
+          type="button"
+          className={`${styles.secondaryButton} ${styles.alignStart}`}
+          onClick={showAllBuildings}
+        >
+          Show all buildings
+        </button>
+      )}
       {groupByBuilding(results).map((group, index) => (
         <BuildingGroupView
           // A building can't appear twice, but the index keeps keys unique

@@ -141,8 +141,7 @@ function Search({
     void search({ when, ...next })
   }
 
-  // Re-runs the latest search's time with the new filters. A time typed into
-  // Later but not yet submitted waits for Find rooms.
+  // Re-runs the latest search's time with the new filters.
   function changeFilters(change: Partial<Filters>) {
     runSearch(whenRef.current, { ...filtersRef.current, ...change })
   }
@@ -240,9 +239,6 @@ function Search({
           onMinimumMinutesChange={(minimumMinutes) =>
             changeFilters({ minimumMinutes })
           }
-          buildings={buildings}
-          buildingId={filters.buildingId}
-          onBuildingChange={(buildingId) => changeFilters({ buildingId })}
           text={draftText}
           onTextChange={setDraftText}
           sort={canSortByDistance ? sort : null}
@@ -267,6 +263,7 @@ function Search({
             buildings={buildings}
             onRetry={availability.retry}
             onLoadMore={() => void availability.loadMore()}
+            onShowAllBuildings={() => changeFilters({ buildingId: null })}
           />
         </div>
         {!sideBySide && map}
