@@ -30,9 +30,6 @@ export type AvailabilityPage = {
   results: AvailabilityResult[]
 }
 
-/** A place on the map, in degrees. */
-export type Point = { latitude: number; longitude: number }
-
 /** When to search: right now, or at a Pacific clock time
  * (`YYYY-MM-DDTHH:MM`, no UTC offset). */
 export type SearchWhen = { kind: 'now' } | { kind: 'at'; at: string }
@@ -56,8 +53,6 @@ export type AvailabilityRequest = {
   building: string | null
   /** Only rooms with exactly this room number. */
   room: string | null
-  /** Sorts the nearest buildings first, or by building name when null. */
-  near: Point | null
   offset?: number
   limit?: number
   signal?: AbortSignal
@@ -77,7 +72,6 @@ export function searchParams({
   buildingId,
   building,
   room,
-  near,
 }: SearchRequest): URLSearchParams {
   const params = new URLSearchParams({ term_id: String(termId) })
   // With no time parameters the API searches right now, on its own clock.
@@ -86,10 +80,6 @@ export function searchParams({
   if (buildingId !== null) params.set('building_id', String(buildingId))
   if (building !== null) params.set('building', building)
   if (room !== null) params.set('room', room)
-  if (near !== null) {
-    params.set('near_latitude', String(near.latitude))
-    params.set('near_longitude', String(near.longitude))
-  }
   return params
 }
 

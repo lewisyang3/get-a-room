@@ -34,7 +34,6 @@ const NOW: SearchQuery = {
   minimumMinutes: 60,
   buildingId: null,
   text: '',
-  near: null,
 }
 
 function at(value: string, minimumMinutes = 60): SearchQuery {
@@ -43,7 +42,6 @@ function at(value: string, minimumMinutes = 60): SearchQuery {
     minimumMinutes,
     buildingId: null,
     text: '',
-    near: null,
   }
 }
 
@@ -213,7 +211,6 @@ describe('useAvailability', () => {
       minimumMinutes: 120,
       buildingId: 4,
       text: 'Dwinelle 242',
-      near: { latitude: 37.874, longitude: -122.258 },
     }
 
     act(() => {
@@ -228,7 +225,6 @@ describe('useAvailability', () => {
     expect(more.searchParams.get('building_id')).toBe('4')
     expect(more.searchParams.get('building')).toBe('Dwinelle')
     expect(more.searchParams.get('room')).toBe('242')
-    expect(more.searchParams.get('near_latitude')).toBe('37.874')
     expect(more.searchParams.get('at')).toBe('2026-10-05T14:30')
 
     await act(async () => pending[1].resolve(jsonResponse({}, 500)))
@@ -243,7 +239,6 @@ describe('useAvailability', () => {
     expect(retried.searchParams.get('building_id')).toBe('4')
     expect(retried.searchParams.get('building')).toBe('Dwinelle')
     expect(retried.searchParams.get('room')).toBe('242')
-    expect(retried.searchParams.get('near_longitude')).toBe('-122.258')
   })
 
   it('skips rooms already listed when appending a page', async () => {

@@ -8,7 +8,6 @@ import type { Building } from '../api/buildings'
 import type { ApiError } from '../api/http'
 import {
   formatClockTime,
-  formatDistance,
   formatDuration,
   formatMinimumDuration,
   formatSearchMoment,
@@ -80,21 +79,13 @@ function BuildingGroupView({
   id,
   group,
   building,
-  sortedByDistance,
 }: {
   id: string
   group: BuildingGroup
   building: Building | undefined
-  sortedByDistance: boolean
 }) {
   const [first] = group.results
   const name = first.building_name
-  const distance =
-    first.distance_meters !== null
-      ? formatDistance(first.distance_meters)
-      : sortedByDistance
-        ? 'Location unknown'
-        : null
   const directions = building ? directionsUrl(building) : null
   return (
     <section className={styles.group} aria-labelledby={id}>
@@ -102,7 +93,6 @@ function BuildingGroupView({
         <h3 id={id} className={styles.groupTitle}>
           {name}
         </h3>
-        {distance && <span className={styles.secondary}>{distance}</span>}
         {directions && (
           <a
             className={styles.groupLink}
@@ -154,7 +144,6 @@ function Summary({
   minimumMinutes,
   buildingName,
   text,
-  nearestFirst,
   page,
 }: {
   titleRef: Ref<HTMLHeadingElement>
@@ -162,7 +151,6 @@ function Summary({
   minimumMinutes: number
   buildingName: string | null
   text: string
-  nearestFirst: boolean
   page: AvailabilityPage
 }) {
   const moment = formatSearchMoment(when, page)
@@ -199,10 +187,7 @@ function Summary({
         {place}
         {matching}
       </h2>
-      <p className={styles.secondary}>
-        For at least {minimum}
-        {nearestFirst && ' · Nearest first'}
-      </p>
+      <p className={styles.secondary}>For at least {minimum}</p>
     </>
   )
 }
@@ -331,7 +316,6 @@ function ResultsList({
           minimumMinutes={resultsQuery.minimumMinutes}
           buildingName={buildingName(buildings, resultsQuery.buildingId)}
           text={resultsQuery.text}
-          nearestFirst={resultsQuery.near !== null}
           page={page}
         />
       </div>
@@ -355,7 +339,6 @@ function ResultsList({
           id={`${id}-group-${index}`}
           group={group}
           building={findBuilding(buildings, group.buildingId)}
-          sortedByDistance={resultsQuery.near !== null}
         />
       ))}
       {remaining > 0 && (

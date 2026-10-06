@@ -30,7 +30,6 @@ const SEARCH = {
   buildingId: null,
   building: null,
   room: null,
-  near: null,
   baseUrl: 'https://api.example.com',
 }
 
@@ -56,7 +55,6 @@ describe('buildingAvailabilityUrl', () => {
         when: { kind: 'at', at: '2026-10-05T14:30' },
         building: 'dwin',
         room: '242',
-        near: { latitude: 37.873, longitude: -122.258 },
       }),
     )
 
@@ -69,8 +67,6 @@ describe('buildingAvailabilityUrl', () => {
       minimum_minutes: '60',
       building: 'dwin',
       room: '242',
-      near_latitude: '37.873',
-      near_longitude: '-122.258',
     })
   })
 

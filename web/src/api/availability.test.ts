@@ -65,7 +65,6 @@ describe('availabilityUrl', () => {
         buildingId: null,
         building: null,
         room: null,
-        near: null,
         baseUrl: 'http://api.test',
       }),
     )
@@ -88,7 +87,6 @@ describe('availabilityUrl', () => {
         buildingId: 4,
         building: 'Dwinelle Hall',
         room: '242',
-        near: { latitude: 37.874, longitude: -122.258 },
         offset: 50,
         baseUrl: 'http://api.test',
       }),
@@ -99,8 +97,6 @@ describe('availabilityUrl', () => {
     expect(url.searchParams.get('building_id')).toBe('4')
     expect(url.searchParams.get('building')).toBe('Dwinelle Hall')
     expect(url.searchParams.get('room')).toBe('242')
-    expect(url.searchParams.get('near_latitude')).toBe('37.874')
-    expect(url.searchParams.get('near_longitude')).toBe('-122.258')
     expect(url.searchParams.get('offset')).toBe('50')
   })
 })
@@ -113,7 +109,6 @@ describe('fetchAvailability', () => {
     buildingId: null,
     building: null,
     room: null,
-    near: null,
   }
 
   it('returns the page', async () => {

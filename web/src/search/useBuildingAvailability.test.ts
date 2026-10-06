@@ -9,7 +9,6 @@ const NOW: SearchQuery = {
   minimumMinutes: 60,
   buildingId: 2,
   text: 'dwin 242',
-  near: null,
 }
 
 const PAGE: AvailabilityPage = {

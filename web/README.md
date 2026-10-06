@@ -24,10 +24,6 @@ line; the detail is here.
   doesn't shift results.
 - **07:00 to 22:00, to the minute.** Availability covers those hours only, and
   seconds are ignored.
-- **Distances are approximate.** "Nearest" uses your location only when you
-  choose it. It's rounded to about 100 m before it's sent, and it isn't
-  stored. Distances are straight-line, from each building's center, and a
-  building whose location isn't known yet is listed last.
 
 ## Campus map
 
@@ -80,9 +76,8 @@ The page aims for WCAG 2.2 AA on phones and desktops.
 
 **How it's checked:** `npm test` runs [axe](https://github.com/dequelabs/axe-core)
 over the landing page and each search state (loading, results, empty, error,
-sorted by nearest, a location failure, and the map in both
-layouts). jsdom can't measure color
-contrast, so the color tokens in `src/index.css` are chosen to meet AA. The
+and the map in both layouts). jsdom can't measure color contrast, so the color
+tokens in `src/index.css` are chosen to meet AA. The
 layout at each width, the keyboard order and Chrome's accessibility tree are
 checked by hand.
 
