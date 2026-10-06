@@ -13,8 +13,16 @@ export default defineConfig({
     // Docker container.
     host: true,
   },
+  build: {
+    // Mapbox GL is about 1.9 MB on its own. It's in a separate chunk that
+    // loads only when the map is shown, so its size doesn't slow the page.
+    chunkSizeWarningLimit: 2000,
+  },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // The map is required, so tests run as a configured site would. Pass
+    // mapboxToken={null} to test an unconfigured one.
+    env: { VITE_MAPBOX_TOKEN: 'pk.test' },
   },
 })

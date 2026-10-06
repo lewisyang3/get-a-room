@@ -12,6 +12,8 @@ services:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
       # The term to search. Set it in this directory's .env or the shell.
       VITE_TERM_ID: ${VITE_TERM_ID:-}
+      # The campus map's Mapbox token. Search is disabled until it's set.
+      VITE_MAPBOX_TOKEN: ${VITE_MAPBOX_TOKEN:-}
     ports:
       - '3000:3000'
     volumes:

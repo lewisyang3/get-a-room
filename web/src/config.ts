@@ -20,3 +20,11 @@ export function resolveTermId(value: string | undefined): number | null {
 export const apiBaseUrl = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL)
 
 export const termId = resolveTermId(import.meta.env.VITE_TERM_ID)
+
+/** Returns the Mapbox access token, or null when it's unset or blank. Search
+ * is disabled until it's set, since the campus map needs it. */
+export function resolveMapboxToken(value: string | undefined): string | null {
+  return value?.trim() || null
+}
+
+export const mapboxToken = resolveMapboxToken(import.meta.env.VITE_MAPBOX_TOKEN)

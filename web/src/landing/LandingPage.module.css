@@ -12,6 +12,22 @@
   padding-bottom: max(var(--space-8), env(safe-area-inset-bottom));
 }
 
+/* With the map beside the results, the page becomes the window's left
+   column and the map fills the rest (see AvailabilitySearch.module.css). */
+.page:has([data-layout='side-by-side']) {
+  --list-width: min(44rem, 50vw);
+  width: var(--list-width);
+  max-width: none;
+  margin: 0;
+  padding-left: max(var(--space-8), env(safe-area-inset-left));
+  padding-right: var(--space-8);
+}
+
+.hero,
+.note {
+  max-width: 40rem;
+}
+
 .header {
   padding-top: max(var(--space-6), env(safe-area-inset-top));
 }

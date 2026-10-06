@@ -21,8 +21,13 @@ export type SearchQuery = {
   near: Point | null
 }
 
-// The API parameters for a query's filters.
-function requestFor({ minimumMinutes, buildingId, text, near }: SearchQuery) {
+/** The API parameters for a query's filters. */
+export function requestFor({
+  minimumMinutes,
+  buildingId,
+  text,
+  near,
+}: SearchQuery) {
   return { minimumMinutes, buildingId, ...parseRoomSearch(text), near }
 }
 

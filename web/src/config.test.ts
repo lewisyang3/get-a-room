@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_API_BASE_URL,
   resolveApiBaseUrl,
+  resolveMapboxToken,
   resolveTermId,
 } from './config'
 
@@ -47,5 +48,15 @@ describe('resolveTermId', () => {
     '99999999999999999',
   ])('returns null for %j', (value) => {
     expect(resolveTermId(value)).toBeNull()
+  })
+})
+
+describe('resolveMapboxToken', () => {
+  it('uses the configured token, trimmed', () => {
+    expect(resolveMapboxToken(' pk.abc ')).toBe('pk.abc')
+  })
+
+  it.each([undefined, '', '   '])('returns null for %j', (value) => {
+    expect(resolveMapboxToken(value)).toBeNull()
   })
 })
