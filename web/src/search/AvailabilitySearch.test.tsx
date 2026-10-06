@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -1025,18 +1026,15 @@ describe('AvailabilitySearch', () => {
         counts: () => jsonResponse(counts([1, 2], [2, 3])),
       })
 
-    it('is left out without a Mapbox token', async () => {
+    it("doesn't search without a Mapbox token", () => {
       stubScreen('wide')
-      const fetchMock = stubApi({
-        buildings: LOCATED,
-        availability: [() => jsonResponse(page([room(1)]))],
-      })
+      withMap([])
       render(<AvailabilitySearch termId={3} mapboxToken={null} />)
-      await screen.findByRole('heading', { name: '1 room free now' })
 
-      expect(screen.queryByRole('region', { name: 'Campus map' })).toBeNull()
-      expect(screen.queryByRole('group', { name: 'Show' })).toBeNull()
-      expect(fetchMock.counts).not.toHaveBeenCalled()
+      expect(screen.getByRole('status')).toHaveTextContent(
+        "Search isn't set up yet: VITE_MAPBOX_TOKEN",
+      )
+      expect(fetch).not.toHaveBeenCalled()
     })
 
     it('is left out when no building has a location', async () => {
@@ -1221,6 +1219,42 @@ describe('AvailabilitySearch', () => {
         await screen.findByRole('heading', { name: '1 room free now' }),
       ).toBeVisible()
       expect(screen.queryByRole('group', { name: 'Show' })).toBeNull()
+      expect(screen.getByText(/The map couldn't load/)).toBeInTheDocument()
+    })
+
+    it("says so when Mapbox can't load the map, and stops fetching counts", async () => {
+      const user = userEvent.setup()
+      stubScreen('wide')
+      const fetchMock = withMap([
+        () => jsonResponse(page([room(1), evans(2)])),
+        () => jsonResponse(page([evans(2)])),
+      ])
+      render(<AvailabilitySearch termId={3} mapboxToken="pk.test" />)
+      await screen.findByRole('button', { name: 'Evans: 3 rooms free' })
+      const countsBefore = fetchMock.counts.mock.calls.length
+
+      act(() => mapbox.map.emit('error', { error: new Error('Unauthorized') }))
+
+      expect(
+        await screen.findByText(
+          "The map couldn't load. Search for a building by name to see its rooms.",
+        ),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('region', { name: 'Campus map' })).toBeNull()
+      expect(mapbox.map.removed).toBe(true)
+
+      // Searching by building name still works, without fetching counts.
+      await user.type(
+        screen.getByRole('searchbox', { name: 'Room or building' }),
+        'Evans',
+      )
+      await screen.findByRole('heading', {
+        name: '1 room free now matching “Evans”',
+      })
+      expect(requestedUrl(fetchMock, 1).searchParams.get('building')).toBe(
+        'Evans',
+      )
+      expect(fetchMock.counts).toHaveBeenCalledTimes(countsBefore)
     })
 
     it('has no accessibility violations beside the results', async () => {

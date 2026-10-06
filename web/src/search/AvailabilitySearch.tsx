@@ -89,7 +89,7 @@ function Search({
   mapboxToken,
 }: {
   termId: number
-  mapboxToken: string | null
+  mapboxToken: string
 }) {
   const availability = useAvailability(termId)
   const { search } = availability
@@ -99,9 +99,8 @@ function Search({
   // On narrow screens, the list or the map.
   const [view, setView] = useState<View>('list')
   const [mapFailed, setMapFailed] = useState(false)
-  // The map needs a token, and at least one building to put on it.
+  // The map needs at least one building to put on it.
   const showMap =
-    mapboxToken !== null &&
     !mapFailed &&
     (buildings?.some(
       (building) => building.latitude !== null && building.longitude !== null,
@@ -208,7 +207,7 @@ function Search({
     if (!sideBySide && buildingId !== null) setView('list')
   }
 
-  const map = mapShown && mapboxToken && buildings && (
+  const map = mapShown && buildings && (
     <div className={styles.mapPane}>
       <MapBoundary onError={() => setMapFailed(true)}>
         <Suspense fallback={null}>
@@ -245,6 +244,12 @@ function Search({
           onSortChange={changeSort}
           locationMessage={locationMessage}
         />
+        {mapFailed && (
+          <p className={styles.message} role="status">
+            The map couldn't load. Search for a building by name to see its
+            rooms.
+          </p>
+        )}
         {showMap && !sideBySide && (
           <fieldset className={styles.field}>
             <legend className={styles.legend}>Show</legend>
@@ -274,7 +279,7 @@ function Search({
 }
 
 /** The time search and its results. `termId` defaults to VITE_TERM_ID, and
- * `mapboxToken` to VITE_MAPBOX_TOKEN; without a token there's no map. */
+ * `mapboxToken` to VITE_MAPBOX_TOKEN; search needs both. */
 function AvailabilitySearch({
   termId = configuredTermId,
   mapboxToken = configuredMapboxToken,
@@ -286,6 +291,14 @@ function AvailabilitySearch({
     return (
       <p className={styles.message} role="status">
         Search isn't set up yet: VITE_TERM_ID needs to name the term to search.
+      </p>
+    )
+  }
+  if (mapboxToken === null) {
+    return (
+      <p className={styles.message} role="status">
+        Search isn't set up yet: VITE_MAPBOX_TOKEN needs a Mapbox public token
+        for the campus map.
       </p>
     )
   }

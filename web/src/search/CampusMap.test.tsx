@@ -180,4 +180,21 @@ describe('CampusMap', () => {
 
     expect(onUnavailable).toHaveBeenCalled()
   })
+
+  it("reports it's unavailable when Mapbox can't load it", () => {
+    const { onUnavailable } = renderMap()
+
+    mapbox.map.emit('error', { error: new Error('Unauthorized') })
+
+    expect(onUnavailable).toHaveBeenCalled()
+  })
+
+  it('keeps the map after an error once it has loaded', () => {
+    const { onUnavailable } = renderMap()
+
+    mapbox.map.emit('load')
+    mapbox.map.emit('error', { error: new Error('Tile not found') })
+
+    expect(onUnavailable).not.toHaveBeenCalled()
+  })
 })

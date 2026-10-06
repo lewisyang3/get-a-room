@@ -31,8 +31,9 @@ line; the detail is here.
 
 ## Campus map
 
-With a Mapbox token set (`VITE_MAPBOX_TOKEN`, see Configuration), a map shows
-each building with how many rooms it has free for the current search.
+A map shows each building with how many rooms it has free for the current
+search. It needs a Mapbox token (`VITE_MAPBOX_TOKEN`, see Configuration), and
+search is disabled until one is set.
 
 - **Counts follow the search.** They use the same time, minimum and room or
   building search as the list, at the same minute. Every building keeps its
@@ -44,9 +45,11 @@ each building with how many rooms it has free for the current search.
 - **Layout.** On wide screens (64rem and up) the map sits beside the
   results and stays in view as they scroll. On narrower screens a List / Map
   switch shows one at a time, and choosing a building goes back to the list.
-- **It's optional.** Without a token, without any building locations, or
-  where the browser can't run it (no WebGL), the map and the switch are left
-  out and the list works as before. Mapbox GL loads only when the map is
+- **If the map can't load.** Where the browser can't run it (no WebGL), or
+  Mapbox can't load it (for example, it rejects the token), a notice says so,
+  the switch is left out, and the list fills the page. Typing a building's
+  name in the search still finds its rooms. Without any building locations,
+  the map is left out with no notice. Mapbox GL loads only when the map is
   shown, in a separate chunk.
 
 The map uses Mapbox's Standard style, with day lighting in light mode and night
@@ -130,11 +133,11 @@ app from another origin, add it to the API's `ALLOWED_ORIGINS`.
 
 ## Configuration
 
-| Variable            | Default                 | Description                                                                            |
-| ------------------- | ----------------------- | -------------------------------------------------------------------------------------- |
-| `VITE_API_BASE_URL` | `http://localhost:8000` | Base URL of the API (no trailing slash needed).                                        |
-| `VITE_TERM_ID`      | none                    | The term to search, as its `term_id`. Search is disabled until it's set.               |
-| `VITE_MAPBOX_TOKEN` | none                    | A Mapbox public token (`pk.…`) for the campus map. The map is left out until it's set. |
+| Variable            | Default                 | Description                                                                           |
+| ------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
+| `VITE_API_BASE_URL` | `http://localhost:8000` | Base URL of the API (no trailing slash needed).                                       |
+| `VITE_TERM_ID`      | none                    | The term to search, as its `term_id`. Search is disabled until it's set.              |
+| `VITE_MAPBOX_TOKEN` | none                    | A Mapbox public token (`pk.…`) for the campus map. Search is disabled until it's set. |
 
 Find a term's id with `python -m ingestion.cli term list` in `get-a-room-api`,
 or `docker compose exec api python -m ingestion.cli term list` in the Compose
@@ -143,7 +146,10 @@ stack.
 Create a Mapbox token at
 [account.mapbox.com/access-tokens](https://account.mapbox.com/access-tokens).
 It's public, since it's built into the page, so for a deployed site limit it to
-that site's URLs.
+that site's URLs. If the site's URL isn't on the token's list, Mapbox rejects it
+and visitors see the "map couldn't load" notice. Mapbox's free tier covers a
+set number of map loads a month; past that, maps fail to load unless billing is
+set up.
 
 Vite reads `VITE_` variables when it starts the dev server or builds, so restart
 or rebuild after changing one. For local overrides, copy `.env.example` to

@@ -21,5 +21,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // The map is required, so tests run as a configured site would. Pass
+    // mapboxToken={null} to test an unconfigured one.
+    env: { VITE_MAPBOX_TOKEN: 'pk.test' },
   },
 })

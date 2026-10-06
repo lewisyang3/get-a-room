@@ -42,11 +42,33 @@ class FakeMap {
   readonly easeTo = vi.fn()
   readonly setConfigProperty = vi.fn()
   removed = false
+  private readonly listeners = new Map<string, ((event?: unknown) => void)[]>()
 
   constructor(options: MapOptions) {
     if (mapbox.failToCreate) throw new Error('Failed to initialize WebGL')
     this.options = options
     mapbox.maps.push(this)
+  }
+
+  on(type: string, listener: (event?: unknown) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
+    return this
+  }
+
+  once(type: string, listener: (event?: unknown) => void) {
+    const wrapped = (event?: unknown) => {
+      this.listeners.set(
+        type,
+        (this.listeners.get(type) ?? []).filter((l) => l !== wrapped),
+      )
+      listener(event)
+    }
+    return this.on(type, wrapped)
+  }
+
+  /** Fires an event, as Mapbox does, e.g. 'load' or 'error'. */
+  emit(type: string, event?: unknown) {
+    for (const listener of this.listeners.get(type) ?? []) listener(event)
   }
 
   remove() {

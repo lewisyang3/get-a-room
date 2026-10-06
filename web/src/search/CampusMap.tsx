@@ -13,7 +13,8 @@ type Props = {
   selectedBuildingId: number | null
   /** Called with a building's id, or null to go back to every building. */
   onSelect: (buildingId: number | null) => void
-  /** Called when the map can't be shown, e.g. without WebGL. */
+  /** Called when the map can't be shown, e.g. without WebGL, or when Mapbox
+   * can't load it, e.g. because it rejects the token. */
   onUnavailable: () => void
 }
 
@@ -116,6 +117,17 @@ function CampusMap({
       return
     }
     mapRef.current = map
+
+    // An error before the map first loads, e.g. Mapbox rejecting the token or
+    // the style, leaves it blank. Errors after that, e.g. a missing tile,
+    // leave a working map, so they're ignored.
+    let loaded = false
+    map.once('load', () => {
+      loaded = true
+    })
+    map.on('error', () => {
+      if (!loaded) unavailable()
+    })
 
     // Places a marker for each building with a location.
     const placed = located.map((building) => {
