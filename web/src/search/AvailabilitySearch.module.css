@@ -30,17 +30,19 @@
 
 /* Form ---------------------------------------------------------------- */
 
+/* Fields are further from each other than from their own labels, so each
+   label reads as belonging to the control under it. */
 .form {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-6);
 }
 
 .field {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-3);
   margin: 0;
   padding: 0;
@@ -56,11 +58,12 @@
   float: left;
   /* Legends have inline padding by default; labels don't. */
   padding: 0;
-  margin-right: var(--space-1);
   font-weight: 600;
 }
 
 .searchInput {
+  width: 100%;
+  max-width: 26rem;
   min-height: 2.75rem;
   padding: 0 var(--space-3);
   font: inherit;

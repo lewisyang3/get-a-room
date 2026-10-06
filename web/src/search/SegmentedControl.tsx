@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import styles from './SegmentedControl.module.css'
 
 export type SegmentedOption<T> = {
@@ -21,8 +22,17 @@ function SegmentedControl<T extends string | number>({
   value,
   onChange,
 }: Props<T>) {
+  // The thumb's position, as custom properties the stylesheet slides it by.
+  const position = {
+    '--count': options.length,
+    '--index': Math.max(
+      0,
+      options.findIndex((option) => option.value === value),
+    ),
+  } as CSSProperties
   return (
-    <div className={styles.segmented}>
+    <div className={styles.segmented} style={position}>
+      <span className={styles.thumb} aria-hidden="true" />
       {options.map((option) => (
         <label key={option.value} className={styles.segment}>
           <input
