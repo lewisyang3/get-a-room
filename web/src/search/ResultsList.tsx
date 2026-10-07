@@ -148,8 +148,7 @@ function Summary({
 }) {
   const minimum = formatMinimumDuration(minimumMinutes)
   const place = buildingName ? ` in ${buildingName}` : ''
-  const quoted = `“${text}”`
-  const matching = text ? ` matching ${quoted}` : ''
+  const matching = text ? ` matching “${text}”` : ''
   if (page.total === 0) {
     return (
       <>
@@ -160,7 +159,6 @@ function Summary({
         </h2>
         {text ? (
           <p className={styles.secondary}>
-            No free room{place} matches {quoted} for at least {minimum} now.
             Check the room number, or try part of the building name.
           </p>
         ) : (

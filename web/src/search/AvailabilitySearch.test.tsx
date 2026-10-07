@@ -519,7 +519,7 @@ describe('AvailabilitySearch', () => {
       ).toBeInTheDocument()
       expect(
         screen.getByText(
-          /^No free room matches “Dwinelle 999” for at least an hour now\. Check the room number/,
+          'Check the room number, or try part of the building name.',
         ),
       ).toBeInTheDocument()
     })
