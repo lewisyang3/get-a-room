@@ -21,9 +21,9 @@ export function formatDuration(totalMinutes: number): string {
 }
 
 /** Describes a minimum free time for a sentence, e.g. "30 minutes",
- * "an hour" or "2 hours". */
+ * "1 hour" or "2 hours". */
 export function formatMinimumDuration(minutes: number): string {
-  if (minutes === 60) return 'an hour'
+  if (minutes === 60) return '1 hour'
   if (minutes % 60 === 0) return `${minutes / 60} hours`
   return minutes === 1 ? '1 minute' : `${minutes} minutes`
 }

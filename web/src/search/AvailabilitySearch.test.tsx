@@ -227,7 +227,7 @@ describe('AvailabilitySearch', () => {
 
     expect(
       await screen.findByRole('heading', {
-        name: `No rooms free for ${nbsp('1 h')}`,
+        name: 'No rooms free for 1 hour',
       }),
     ).toBeInTheDocument()
     expect(screen.queryByText(/Nothing is free/)).not.toBeInTheDocument()
@@ -266,7 +266,7 @@ describe('AvailabilitySearch', () => {
       expect(
         requestedUrl(fetchMock, 0).searchParams.get('minimum_minutes'),
       ).toBe('60')
-      expect(screen.getByText('For at least an hour')).toBeInTheDocument()
+      expect(screen.getByText('For at least 1 hour')).toBeInTheDocument()
     })
 
     it('updates the results as soon as it changes', async () => {
@@ -300,12 +300,12 @@ describe('AvailabilitySearch', () => {
       await screen.findByRole('heading', { name: '1 room free now' })
 
       await user.click(screen.getByRole('radio', { name: nbsp('3 h') }))
-      expect(screen.getByText('For at least an hour')).toBeInTheDocument()
+      expect(screen.getByText('For at least 1 hour')).toBeInTheDocument()
 
       respond(jsonResponse(page([])))
       expect(
         await screen.findByRole('heading', {
-          name: `No rooms free for ${nbsp('3 h')}`,
+          name: 'No rooms free for 3 hours',
         }),
       ).toBeInTheDocument()
     })
@@ -444,7 +444,7 @@ describe('AvailabilitySearch', () => {
 
       expect(
         await screen.findByRole('heading', {
-          name: `No rooms free for ${nbsp('2 h')} matching “101”`,
+          name: 'No rooms free for 2 hours matching “101”',
         }),
       ).toBeInTheDocument()
       const url = requestedUrl(fetchMock, 2)
@@ -514,7 +514,7 @@ describe('AvailabilitySearch', () => {
 
       expect(
         await screen.findByRole('heading', {
-          name: `No rooms free for ${nbsp('1 h')} matching “Dwinelle 999”`,
+          name: 'No rooms free for 1 hour matching “Dwinelle 999”',
         }),
       ).toBeInTheDocument()
       expect(
@@ -1068,7 +1068,7 @@ describe('AvailabilitySearch', () => {
       stubResponses(() => jsonResponse(page([])))
       render(<AvailabilitySearch termId={3} />)
       await screen.findByRole('heading', {
-        name: `No rooms free for ${nbsp('1 h')}`,
+        name: 'No rooms free for 1 hour',
       })
 
       await check()

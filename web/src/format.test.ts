@@ -34,7 +34,7 @@ describe('formatDuration', () => {
 describe('formatMinimumDuration', () => {
   it.each([
     [30, '30 minutes'],
-    [60, 'an hour'],
+    [60, '1 hour'],
     [120, '2 hours'],
     [180, '3 hours'],
     [90, '90 minutes'],

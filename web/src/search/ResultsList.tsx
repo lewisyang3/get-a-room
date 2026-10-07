@@ -153,7 +153,7 @@ function Summary({
     return (
       <>
         <h2 ref={titleRef} className={styles.summaryTitle} tabIndex={-1}>
-          No rooms free for {formatDuration(minimumMinutes)}
+          No rooms free for {minimum}
           {place}
           {matching}
         </h2>
