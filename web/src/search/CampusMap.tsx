@@ -87,7 +87,10 @@ function CampusMap({
 
   // Each building's marker is a button. Mapbox gives a marker element
   // role="img" unless it has a role, which would hide a button inside it
-  // from screen readers, so the element is the button itself.
+  // from screen readers, so the element is the button itself. The pill is a
+  // span inside it, so it can scale in place: Mapbox positions the button
+  // with `transform`, and scaling the button would scale that offset too,
+  // sliding the marker off its building.
   const markers = useMemo(
     () =>
       new Map(
@@ -97,6 +100,9 @@ function CampusMap({
           button.setAttribute('role', 'button')
           button.setAttribute('aria-label', building.building_name)
           button.classList.add(styles.marker)
+          const pill = document.createElement('span')
+          pill.classList.add(styles.pill)
+          button.append(pill)
           return [building.building_id, button] as const
         }),
       ),
@@ -181,7 +187,7 @@ function CampusMap({
       const element = markers.get(building.building_id)!
       const { text, label, kind } = markerContent(building, counts)
       const selected = building.building_id === selectedBuildingId
-      element.textContent = text
+      element.firstElementChild!.textContent = text
       element.setAttribute('aria-label', label)
       element.setAttribute('aria-pressed', String(selected))
       // Toggles only this component's classes; Mapbox adds its own.
