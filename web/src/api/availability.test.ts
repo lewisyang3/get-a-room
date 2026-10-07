@@ -60,7 +60,6 @@ describe('availabilityUrl', () => {
     const url = new URL(
       availabilityUrl({
         termId: 3,
-        when: { kind: 'now' },
         minimumMinutes: 60,
         buildingId: null,
         building: null,
@@ -78,11 +77,11 @@ describe('availabilityUrl', () => {
     })
   })
 
-  it('passes a later time as at, with the filters and paging', () => {
+  it('passes a pinned time as at, with the filters and paging', () => {
     const url = new URL(
       availabilityUrl({
         termId: 3,
-        when: { kind: 'at', at: '2026-10-05T14:30' },
+        at: '2026-10-05T14:30',
         minimumMinutes: 120,
         buildingId: 4,
         building: 'Dwinelle Hall',
@@ -104,7 +103,6 @@ describe('availabilityUrl', () => {
 describe('fetchAvailability', () => {
   const request = {
     termId: 3,
-    when: { kind: 'now' } as const,
     minimumMinutes: 60,
     buildingId: null,
     building: null,

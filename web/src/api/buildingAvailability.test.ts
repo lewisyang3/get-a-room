@@ -25,7 +25,6 @@ const LIST: BuildingAvailabilityList = {
 
 const SEARCH = {
   termId: 3,
-  when: { kind: 'now' } as const,
   minimumMinutes: 60,
   buildingId: null,
   building: null,
@@ -52,7 +51,7 @@ describe('buildingAvailabilityUrl', () => {
     const url = new URL(
       buildingAvailabilityUrl({
         ...SEARCH,
-        when: { kind: 'at', at: '2026-10-05T14:30' },
+        at: '2026-10-05T14:30',
         building: 'dwin',
         room: '242',
       }),

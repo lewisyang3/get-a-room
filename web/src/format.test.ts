@@ -3,8 +3,6 @@ import {
   formatClockTime,
   formatDuration,
   formatMinimumDuration,
-  formatSearchMoment,
-  formatShortDate,
 } from './format'
 
 // The formatters join numbers and units with non-breaking spaces.
@@ -43,25 +41,5 @@ describe('formatMinimumDuration', () => {
     [1, '1 minute'],
   ])('describes %i minutes as %s', (minutes, expected) => {
     expect(formatMinimumDuration(minutes)).toBe(expected)
-  })
-})
-
-describe('formatShortDate', () => {
-  it('keeps the calendar date as given', () => {
-    expect(formatShortDate('2026-10-05')).toBe('Mon, Oct 5')
-  })
-})
-
-describe('formatSearchMoment', () => {
-  const page = { date: '2026-10-05', time: '14:30' }
-
-  it('says now for a now search', () => {
-    expect(formatSearchMoment({ kind: 'now' }, page)).toBe('now')
-  })
-
-  it('names the date and time for a later search', () => {
-    expect(
-      formatSearchMoment({ kind: 'at', at: '2026-10-05T14:30' }, page),
-    ).toBe(`at Mon, Oct 5, ${nbsp('2:30 PM')}`)
   })
 })

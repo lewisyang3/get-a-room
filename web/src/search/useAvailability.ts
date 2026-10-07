@@ -3,16 +3,14 @@ import {
   fetchAvailability,
   type AvailabilityPage,
   type AvailabilityResult,
-  type SearchWhen,
 } from '../api/availability'
 import { ApiError } from '../api/http'
 import { parseRoomSearch } from './roomSearch'
 
-/** What to search for: when, how long a room must stay free, which
+/** What to search for right now: how long a room must stay free, which
  * building (null for every building), and the room or building search text
  * (normalized, and empty for none). */
 export type SearchQuery = {
-  when: SearchWhen
   minimumMinutes: number
   buildingId: number | null
   text: string
@@ -60,13 +58,10 @@ function toApiError(error: unknown): ApiError {
     : new ApiError('server', 'The search failed unexpectedly.', null)
 }
 
-/** The search that repeats `page`'s moment exactly: the date and time the
- * API reported, rather than "now" again. */
-export function pinnedSearch(
-  when: SearchWhen,
-  page: AvailabilityPage,
-): SearchWhen {
-  return page.date ? { kind: 'at', at: `${page.date}T${page.time}` } : when
+/** The time that repeats `page`'s moment exactly: the date and time the
+ * API reported, rather than "now" again. Null if the API reported no date. */
+export function pinnedAt(page: AvailabilityPage): string | null {
+  return page.date ? `${page.date}T${page.time}` : null
 }
 
 // Appends a page, skipping any room already listed, so a room can't appear
@@ -111,7 +106,6 @@ export function useAvailability(termId: number) {
       try {
         const page = await fetchAvailability({
           termId,
-          when: query.when,
           ...requestFor(query),
           signal,
         })
@@ -150,7 +144,7 @@ export function useAvailability(termId: number) {
     // "now" is worked out from the API's clock on every request, so asking
     // for it again could page through a different minute's rooms. Later pages
     // ask for the exact moment the first page was computed for.
-    const when = pinnedSearch(state.resultsQuery.when, state.page)
+    const at = pinnedAt(state.page)
     const offset = state.results.length
     const signal = restart()
     setState((previous) => ({
@@ -161,7 +155,7 @@ export function useAvailability(termId: number) {
     try {
       const page = await fetchAvailability({
         termId,
-        when,
+        at,
         ...requestFor(state.resultsQuery),
         offset,
         signal,

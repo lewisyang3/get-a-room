@@ -30,20 +30,12 @@ function page(ids: number[], total = ids.length, offset = 0): AvailabilityPage {
 }
 
 const NOW: SearchQuery = {
-  when: { kind: 'now' },
   minimumMinutes: 60,
   buildingId: null,
   text: '',
 }
 
-function at(value: string, minimumMinutes = 60): SearchQuery {
-  return {
-    when: { kind: 'at', at: value },
-    minimumMinutes,
-    buildingId: null,
-    text: '',
-  }
-}
+const TWO_HOURS: SearchQuery = { ...NOW, minimumMinutes: 120 }
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status })
@@ -98,13 +90,13 @@ describe('useAvailability', () => {
       void result.current.search(NOW)
     })
     act(() => {
-      void result.current.search(at('2026-10-05T15:00'))
+      void result.current.search(TWO_HOURS)
     })
 
     expect(pending[0].signal?.aborted).toBe(true)
     await act(async () => pending[1].resolve(jsonResponse(page([9]))))
 
-    expect(result.current.query).toEqual(at('2026-10-05T15:00'))
+    expect(result.current.query).toEqual(TWO_HOURS)
     expect(result.current.results.map((r) => r.room_id)).toEqual([9])
   })
 
@@ -149,14 +141,17 @@ describe('useAvailability', () => {
     const { result } = renderHook(() => useAvailability(3))
 
     act(() => {
-      void result.current.search(at('2026-10-05T14:30'))
+      void result.current.search(TWO_HOURS)
     })
     await act(async () => pending[0].resolve(jsonResponse({}, 500)))
     act(() => result.current.retry())
     await act(async () => pending[1].resolve(jsonResponse(page([4]))))
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(pending[1].url).toContain('at=2026-10-05T14%3A30')
+    const retried = new URL(pending[1].url)
+    expect(retried.searchParams.get('minimum_minutes')).toBe('120')
+    // A retry asks for now again, not the failed search's minute.
+    expect(retried.searchParams.has('at')).toBe(false)
     expect(result.current.status).toBe('success')
   })
 
@@ -207,7 +202,6 @@ describe('useAvailability', () => {
     const { pending } = controlledFetch()
     const { result } = renderHook(() => useAvailability(3))
     const query: SearchQuery = {
-      when: { kind: 'now' },
       minimumMinutes: 120,
       buildingId: 4,
       text: 'Dwinelle 242',

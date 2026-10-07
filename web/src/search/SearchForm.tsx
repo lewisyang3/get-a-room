@@ -1,11 +1,11 @@
 import { useId, type FormEvent } from 'react'
-import { MINIMUM_MINUTES_OPTIONS, type SearchWhen } from '../api/availability'
+import { MINIMUM_MINUTES_OPTIONS } from '../api/availability'
 import { formatDuration } from '../format'
 import styles from './AvailabilitySearch.module.css'
 import SegmentedControl, { type SegmentedOption } from './SegmentedControl'
 
 type Props = {
-  onSearch: (when: SearchWhen) => void
+  onSearch: () => void
   minimumMinutes: number
   onMinimumMinutesChange: (minutes: number) => void
   /** The room or building search, as typed. */
@@ -30,7 +30,7 @@ function SearchForm({
   // Enter in the search field searches right away.
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    onSearch({ kind: 'now' })
+    onSearch()
   }
 
   return (

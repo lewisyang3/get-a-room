@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { DEFAULT_MINIMUM_MINUTES, type SearchWhen } from '../api/availability'
+import { DEFAULT_MINIMUM_MINUTES } from '../api/availability'
 import {
   termId as configuredTermId,
   mapboxToken as configuredMapboxToken,
@@ -58,9 +58,7 @@ class MapBoundary extends Component<
   }
 }
 
-type Filters = Omit<SearchQuery, 'when'>
-
-const DEFAULT_FILTERS: Filters = {
+const DEFAULT_FILTERS: SearchQuery = {
   minimumMinutes: DEFAULT_MINIMUM_MINUTES,
   buildingId: null,
   text: '',
@@ -99,23 +97,21 @@ function Search({
   )
   const mapShown = showMap && (sideBySide || view === 'map')
   const [filters, setFilters] = useState(DEFAULT_FILTERS)
-  // The latest search's time and filters. Refs, so a search started after a
-  // wait for typing to pause builds on the latest ones.
-  const whenRef = useRef<SearchWhen>({ kind: 'now' })
+  // The latest search's filters. A ref, so a search started after a wait for
+  // typing to pause builds on the latest ones.
   const filtersRef = useRef(DEFAULT_FILTERS)
   // The search field as typed, which applies once typing pauses.
   const [draftText, setDraftText] = useState('')
 
-  function runSearch(when: SearchWhen, next: Filters) {
-    whenRef.current = when
+  function runSearch(next: SearchQuery) {
     filtersRef.current = next
     setFilters(next)
-    void search({ when, ...next })
+    void search(next)
   }
 
-  // Re-runs the latest search's time with the new filters.
-  function changeFilters(change: Partial<Filters>) {
-    runSearch(whenRef.current, { ...filtersRef.current, ...change })
+  // Searches again with the new filters.
+  function changeFilters(change: Partial<SearchQuery>) {
+    runSearch({ ...filtersRef.current, ...change })
   }
 
   // Skips text that only differs in whitespace, or was already applied by
@@ -133,8 +129,8 @@ function Search({
   }, [draftText])
 
   // Submitting applies the search text right away, without waiting.
-  function submit(when: SearchWhen) {
-    runSearch(when, {
+  function submit() {
+    runSearch({
       ...filtersRef.current,
       text: normalizeSearchText(draftText),
     })
@@ -142,7 +138,7 @@ function Search({
 
   // Most visits ask "what's free now?", so answer it without a tap.
   useEffect(() => {
-    void search({ when: { kind: 'now' }, ...DEFAULT_FILTERS })
+    void search(DEFAULT_FILTERS)
   }, [search])
 
   // Choosing a building on the map filters the results to it. On a narrow

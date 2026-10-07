@@ -1,16 +1,11 @@
 import { useEffect, useId, useRef, type Ref } from 'react'
-import type {
-  AvailabilityPage,
-  AvailabilityResult,
-  SearchWhen,
-} from '../api/availability'
+import type { AvailabilityPage, AvailabilityResult } from '../api/availability'
 import type { Building } from '../api/buildings'
 import type { ApiError } from '../api/http'
 import {
   formatClockTime,
   formatDuration,
   formatMinimumDuration,
-  formatSearchMoment,
 } from '../format'
 import type { AvailabilityState, SearchQuery } from './useAvailability'
 import styles from './AvailabilitySearch.module.css'
@@ -140,20 +135,17 @@ function ResultRow({ result }: { result: AvailabilityResult }) {
 
 function Summary({
   titleRef,
-  when,
   minimumMinutes,
   buildingName,
   text,
   page,
 }: {
   titleRef: Ref<HTMLHeadingElement>
-  when: SearchWhen
   minimumMinutes: number
   buildingName: string | null
   text: string
   page: AvailabilityPage
 }) {
-  const moment = formatSearchMoment(when, page)
   const minimum = formatMinimumDuration(minimumMinutes)
   const place = buildingName ? ` in ${buildingName}` : ''
   const quoted = `“${text}”`
@@ -162,18 +154,18 @@ function Summary({
     return (
       <>
         <h2 ref={titleRef} className={styles.summaryTitle} tabIndex={-1}>
-          No rooms free {moment}
+          No rooms free now
           {place}
           {matching}
         </h2>
         {text ? (
           <p className={styles.secondary}>
-            No free room{place} matches {quoted} for at least {minimum} {moment}
-            . Check the room number, or try part of the building name.
+            No free room{place} matches {quoted} for at least {minimum} now.
+            Check the room number, or try part of the building name.
           </p>
         ) : (
           <p className={styles.secondary}>
-            Nothing{place} is free for at least {minimum} {moment}. Availability
+            Nothing{place} is free for at least {minimum} now. Availability
             covers 7&nbsp;a.m. to 10&nbsp;p.m. on days during the term.
           </p>
         )}
@@ -183,7 +175,7 @@ function Summary({
   return (
     <>
       <h2 ref={titleRef} className={styles.summaryTitle} tabIndex={-1}>
-        {roomCount(page.total)} free {moment}
+        {roomCount(page.total)} free now
         {place}
         {matching}
       </h2>
@@ -312,7 +304,6 @@ function ResultsList({
       <div className={styles.summary} aria-live="polite">
         <Summary
           titleRef={titleRef}
-          when={resultsQuery.when}
           minimumMinutes={resultsQuery.minimumMinutes}
           buildingName={buildingName(buildings, resultsQuery.buildingId)}
           text={resultsQuery.text}

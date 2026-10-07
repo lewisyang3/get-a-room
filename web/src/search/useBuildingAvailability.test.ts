@@ -5,7 +5,6 @@ import type { SearchQuery } from './useAvailability'
 import { useBuildingAvailability } from './useBuildingAvailability'
 
 const NOW: SearchQuery = {
-  when: { kind: 'now' },
   minimumMinutes: 60,
   buildingId: 2,
   text: 'dwin 242',

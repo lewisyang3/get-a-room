@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useState } from 'react'
 import type { AvailabilityPage } from '../api/availability'
 import { fetchBuildingAvailability } from '../api/buildingAvailability'
-import { pinnedSearch, requestFor, type SearchQuery } from './useAvailability'
+import { pinnedAt, requestFor, type SearchQuery } from './useAvailability'
 
 /** How many rooms each building has free, by building id, or 'unknown'
  * before the first counts arrive or after they fail. A building that isn't
@@ -23,7 +23,7 @@ export function useBuildingAvailability(
   // "now" again.
   const request = useEffectEvent((query: SearchQuery) => ({
     termId,
-    when: page ? pinnedSearch(query.when, page) : query.when,
+    at: page ? pinnedAt(page) : null,
     ...requestFor({ ...query, buildingId: null }),
   }))
 

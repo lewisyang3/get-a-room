@@ -30,10 +30,6 @@ export type AvailabilityPage = {
   results: AvailabilityResult[]
 }
 
-/** When to search: right now, or at a Pacific clock time
- * (`YYYY-MM-DDTHH:MM`, no UTC offset). */
-export type SearchWhen = { kind: 'now' } | { kind: 'at'; at: string }
-
 const PAGE_SIZE = 50
 
 /** The API's default minimum free time, in minutes. */
@@ -44,7 +40,9 @@ export const MINIMUM_MINUTES_OPTIONS = [30, 60, 120, 180] as const
 
 export type AvailabilityRequest = {
   termId: number
-  when: SearchWhen
+  /** The Pacific clock time to search (`YYYY-MM-DDTHH:MM`, no UTC offset),
+   * or null or absent for now. */
+  at?: string | null
   /** Only rooms free for at least this many minutes. */
   minimumMinutes: number
   /** Only rooms in this building, or every building when null. */
@@ -67,7 +65,7 @@ export type SearchRequest = Omit<AvailabilityRequest, 'offset' | 'limit'>
  * /availability/buildings. */
 export function searchParams({
   termId,
-  when,
+  at,
   minimumMinutes,
   buildingId,
   building,
@@ -75,7 +73,7 @@ export function searchParams({
 }: SearchRequest): URLSearchParams {
   const params = new URLSearchParams({ term_id: String(termId) })
   // With no time parameters the API searches right now, on its own clock.
-  if (when.kind === 'at') params.set('at', when.at)
+  if (at) params.set('at', at)
   params.set('minimum_minutes', String(minimumMinutes))
   if (buildingId !== null) params.set('building_id', String(buildingId))
   if (building !== null) params.set('building', building)
