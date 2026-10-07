@@ -154,7 +154,7 @@ function Summary({
     return (
       <>
         <h2 ref={titleRef} className={styles.summaryTitle} tabIndex={-1}>
-          No rooms free now
+          No rooms free for {formatDuration(minimumMinutes)}
           {place}
           {matching}
         </h2>
@@ -165,8 +165,8 @@ function Summary({
           </p>
         ) : (
           <p className={styles.secondary}>
-            Nothing{place} is free for at least {minimum} now. Availability
-            covers 7&nbsp;a.m. to 10&nbsp;p.m. on days during the term.
+            Availability covers 7&nbsp;a.m. to 10&nbsp;p.m. on days during the
+            term.
           </p>
         )}
       </>

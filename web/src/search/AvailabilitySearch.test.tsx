@@ -226,8 +226,11 @@ describe('AvailabilitySearch', () => {
     render(<AvailabilitySearch termId={3} />)
 
     expect(
-      await screen.findByRole('heading', { name: 'No rooms free now' }),
+      await screen.findByRole('heading', {
+        name: `No rooms free for ${nbsp('1 h')}`,
+      }),
     ).toBeInTheDocument()
+    expect(screen.queryByText(/Nothing is free/)).not.toBeInTheDocument()
     expect(
       screen.getByText(/covers 7\sa\.m\. to 10\sp\.m\./),
     ).toBeInTheDocument()
@@ -301,7 +304,9 @@ describe('AvailabilitySearch', () => {
 
       respond(jsonResponse(page([])))
       expect(
-        await screen.findByText(/^Nothing is free for at least 3 hours now\./),
+        await screen.findByRole('heading', {
+          name: `No rooms free for ${nbsp('3 h')}`,
+        }),
       ).toBeInTheDocument()
     })
   })
@@ -439,7 +444,7 @@ describe('AvailabilitySearch', () => {
 
       expect(
         await screen.findByRole('heading', {
-          name: 'No rooms free now matching “101”',
+          name: `No rooms free for ${nbsp('2 h')} matching “101”`,
         }),
       ).toBeInTheDocument()
       const url = requestedUrl(fetchMock, 2)
@@ -509,7 +514,7 @@ describe('AvailabilitySearch', () => {
 
       expect(
         await screen.findByRole('heading', {
-          name: 'No rooms free now matching “Dwinelle 999”',
+          name: `No rooms free for ${nbsp('1 h')} matching “Dwinelle 999”`,
         }),
       ).toBeInTheDocument()
       expect(
@@ -1062,7 +1067,9 @@ describe('AvailabilitySearch', () => {
     it('with no results', async () => {
       stubResponses(() => jsonResponse(page([])))
       render(<AvailabilitySearch termId={3} />)
-      await screen.findByRole('heading', { name: 'No rooms free now' })
+      await screen.findByRole('heading', {
+        name: `No rooms free for ${nbsp('1 h')}`,
+      })
 
       await check()
     })
