@@ -34,7 +34,7 @@ export type AvailabilityPage = {
  * (`YYYY-MM-DDTHH:MM`, no UTC offset). */
 export type SearchWhen = { kind: 'now' } | { kind: 'at'; at: string }
 
-export const PAGE_SIZE = 50
+const PAGE_SIZE = 50
 
 /** The API's default minimum free time, in minutes. */
 export const DEFAULT_MINIMUM_MINUTES = 60

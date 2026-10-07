@@ -5,7 +5,6 @@ import {
   formatMinimumDuration,
   formatSearchMoment,
   formatShortDate,
-  nextHalfHourInPacific,
 } from './format'
 
 // The formatters join numbers and units with non-breaking spaces.
@@ -64,22 +63,5 @@ describe('formatSearchMoment', () => {
     expect(
       formatSearchMoment({ kind: 'at', at: '2026-10-05T14:30' }, page),
     ).toBe(`at Mon, Oct 5, ${nbsp('2:30 PM')}`)
-  })
-})
-
-describe('nextHalfHourInPacific', () => {
-  it.each([
-    // Standard time, UTC-8.
-    ['2026-01-15T20:05:00Z', '2026-01-15T12:30'],
-    // Daylight time, UTC-7, already on the half hour.
-    ['2026-10-05T21:30:00Z', '2026-10-05T14:30'],
-    // Rounds up to the hour.
-    ['2026-10-05T21:31:00Z', '2026-10-05T15:00'],
-    // The morning DST starts, just after the clocks jump from 2 to 3 a.m.
-    ['2026-03-08T10:10:00Z', '2026-03-08T03:30'],
-    // Rolls over midnight into the next day.
-    ['2026-10-05T06:50:00Z', '2026-10-05T00:00'],
-  ])('turns %s into %s', (now, expected) => {
-    expect(nextHalfHourInPacific(new Date(now))).toBe(expected)
   })
 })

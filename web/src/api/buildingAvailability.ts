@@ -3,7 +3,7 @@ import { searchParams, type SearchRequest } from './availability'
 import { fetchJson } from './http'
 
 /** A building with at least one room free at the time searched. */
-export type BuildingAvailability = {
+type BuildingAvailability = {
   building_id: number
   building_code: string
   building_name: string

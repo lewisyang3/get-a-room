@@ -1,8 +1,5 @@
 import type { SearchWhen } from './api/availability'
 
-/** Campus time. The API reports every time in the term's timezone. */
-export const CAMPUS_TIME_ZONE = 'America/Los_Angeles'
-
 // A non-breaking space keeps a number with its unit, e.g. "2:30 PM".
 const NBSP = ' '
 
@@ -54,36 +51,4 @@ export function formatSearchMoment(
   if (when.kind === 'now') return 'now'
   const time = formatClockTime(page.time)
   return page.date ? `at ${formatShortDate(page.date)}, ${time}` : `at ${time}`
-}
-
-/** Returns the next :00 or :30 at or after `now`, as Pacific clock time in the
- * `YYYY-MM-DDTHH:MM` form a datetime-local input takes. */
-export function nextHalfHourInPacific(now: Date): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: CAMPUS_TIME_ZONE,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    })
-      .formatToParts(now)
-      .map((part) => [part.type, part.value]),
-  )
-  // Treat the Pacific clock reading as UTC so the arithmetic below, including
-  // rolling over midnight, can't be affected by DST or the device's timezone.
-  const clock = new Date(
-    Date.UTC(
-      Number(parts.year),
-      Number(parts.month) - 1,
-      Number(parts.day),
-      Number(parts.hour),
-      Number(parts.minute),
-    ),
-  )
-  const roundUp = (30 - (clock.getUTCMinutes() % 30)) % 30
-  clock.setUTCMinutes(clock.getUTCMinutes() + roundUp)
-  return clock.toISOString().slice(0, 16)
 }
