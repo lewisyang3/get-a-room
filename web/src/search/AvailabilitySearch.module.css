@@ -43,7 +43,6 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-3);
   margin: 0;
   padding: 0;
   border: 0;
@@ -58,6 +57,9 @@
   float: left;
   /* Legends have inline padding by default; labels don't. */
   padding: 0;
+  /* A margin, not the field's gap: Safari leaves a legend out of a flex
+     container's gap, which put it right against its control. */
+  margin: 0 0 var(--space-3);
   font-weight: 600;
 }
 
