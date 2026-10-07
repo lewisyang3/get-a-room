@@ -12,10 +12,6 @@ export type AvailabilityResult = {
   available_from: string
   available_until: string
   available_minutes: number
-  /** The building's distance in metres from the point searched near, or
-   * null when not searching near a point or the building's location is
-   * unknown. */
-  distance_meters: number | null
 }
 
 /** One page of rooms, with the date, weekday and time the API searched. */

@@ -18,7 +18,6 @@ const LIST: BuildingAvailabilityList = {
       free_rooms: 6,
       longest_free_until: '22:00',
       longest_free_minutes: 450,
-      distance_meters: null,
     },
   ],
 }

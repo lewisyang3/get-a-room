@@ -27,7 +27,6 @@ function room(id: number, overrides: Partial<AvailabilityResult> = {}) {
     available_from: '14:30',
     available_until: '17:00',
     available_minutes: 150,
-    distance_meters: null,
     ...overrides,
   }
 }
@@ -84,7 +83,6 @@ function counts(...pairs: [number, number][]) {
       free_rooms: free,
       longest_free_until: '22:00',
       longest_free_minutes: 450,
-      distance_meters: null,
     })),
   }
 }

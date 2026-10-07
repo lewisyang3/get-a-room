@@ -13,7 +13,6 @@ function room(id: number): AvailabilityResult {
     available_from: '14:30',
     available_until: '17:00',
     available_minutes: 150,
-    distance_meters: null,
   }
 }
 

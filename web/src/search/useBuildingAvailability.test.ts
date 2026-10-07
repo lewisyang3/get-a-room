@@ -32,7 +32,6 @@ function counts(...pairs: [number, number][]) {
       free_rooms: free,
       longest_free_until: '22:00',
       longest_free_minutes: 450,
-      distance_meters: null,
     })),
   }
 }

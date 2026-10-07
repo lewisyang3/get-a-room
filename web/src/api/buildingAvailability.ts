@@ -13,7 +13,6 @@ type BuildingAvailability = {
    * term's timezone. */
   longest_free_until: string
   longest_free_minutes: number
-  distance_meters: number | null
 }
 
 /** Every building with a room free, with the moment the API searched. */
