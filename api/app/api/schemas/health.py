@@ -4,8 +4,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class HealthResponse(BaseModel):
-    """The API process is up."""
+    """The API is up, and for `/ready`, can reach its database."""
 
     model_config = ConfigDict(json_schema_extra={"examples": [{"status": "ok"}]})
 
-    status: Literal["ok"] = Field(description="Always `ok` while the API is serving.")
+    status: Literal["ok"] = Field(
+        description="Always `ok`; a failure is an error response instead."
+    )
