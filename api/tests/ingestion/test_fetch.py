@@ -276,3 +276,19 @@ def test_fetch_reports_an_error_pages_title():
     assert str(exc_info.value.__cause__) == (
         "/content/down returned 504: 504 - Target not responding"
     )
+
+
+def test_fetch_names_the_listing_page_in_an_immediate_failure():
+    session = FakeSession(lambda path, params: FakeResponse(403))
+    sleep, _ = _fake_sleep_recorder()
+
+    with pytest.raises(FetchError) as exc_info:
+        fetch(
+            session,
+            "/taxonomy/term/8588",
+            params={"page": 412},
+            rate_limit_seconds=0,
+            sleep=sleep,
+        )
+
+    assert str(exc_info.value).startswith("/taxonomy/term/8588?page=412 returned 403")

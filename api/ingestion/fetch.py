@@ -131,10 +131,12 @@ def fetch(
             last_problem = f"{type(exc).__name__}: {exc}"
             continue
         except RequestException as exc:
-            raise FetchError(f"{path} failed: {exc}") from exc
+            raise FetchError(f"{target} failed: {exc}") from exc
 
         if response.status_code in _HARD_FAIL_STATUSES:
-            raise FetchError(f"{path} returned {_error_detail(response)} (not retried)")
+            raise FetchError(
+                f"{target} returned {_error_detail(response)} (not retried)"
+            )
         if response.status_code >= 400:
             last_problem = f"returned {_error_detail(response)}"
             last_error = FetchError(f"{target} {last_problem}")
