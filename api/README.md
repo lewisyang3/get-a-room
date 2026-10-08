@@ -80,13 +80,23 @@ Inside Docker Compose, prefix commands with `docker compose run --rm api`,
 e.g. `docker compose run --rm api python -m ingestion.cli term list`.
 
 `import run` scrapes every section in the term, one request per
-`SCRAPER_RATE_LIMIT_SECONDS` (a full term is thousands of requests - expect it
-to take a while), logs progress every 100 sections, recomputes the term's
+`SCRAPER_RATE_LIMIT_SECONDS` (a full term is about 11,000 requests, roughly 8
+hours), logs progress every 100 sections, recomputes the term's
 availability, and records the run as an `ImportRun`. A completed run also
 stamps the term's `processed_at` (shown as `PROCESSED` in `term list`); a
 failed run leaves it unchanged, so it always says when the term's current data
 was imported. Re-running is safe: meetings are upserted, and ones the term no
-longer lists are removed. Options:
+longer lists are removed.
+
+A request that times out or loses its connection, or gets an error status
+other than 401, 403 or 404 back, is retried after 5s, 30s and 2 min, with a
+warning logged each time, so an outage of a couple of
+minutes at classes.berkeley.edu doesn't fail the run. A failed listing page
+still fails the whole run once its retries are used up, since the sections
+on it would be missed. On a laptop, keep it awake for the whole run, e.g.
+`caffeinate -is python -m ingestion.cli import run "Fall 2026"` on macOS.
+
+Options:
 
 - `--max-retire-fraction F` (default `0.5`) — abort, keeping the existing
   data, if the run would remove more than this fraction of the term's
