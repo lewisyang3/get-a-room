@@ -1,10 +1,20 @@
-from fastapi import FastAPI
+import logging
+
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
 from app.api.routes.availability import router as availability_router
 from app.api.routes.buildings import router as buildings_router
+from app.api.schemas.errors import ErrorResponse
 from app.api.schemas.health import HealthResponse
 
 from app.config import get_settings
+from app.db import get_db
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -34,7 +44,7 @@ app = FastAPI(
             "name": "buildings",
             "description": "List the buildings that availability searches.",
         },
-        {"name": "operations", "description": "Service health."},
+        {"name": "operations", "description": "Service health and readiness."},
     ],
 )
 
@@ -58,5 +68,27 @@ app.include_router(buildings_router)
 )
 def health() -> HealthResponse:
     """Reports that the API process is serving requests. It doesn't check the
-    database."""
+    database; `/ready` does."""
+    return HealthResponse(status="ok")
+
+
+@app.get(
+    "/ready",
+    response_model=HealthResponse,
+    summary="Check the API can reach its database",
+    tags=["operations"],
+    responses={
+        503: {"model": ErrorResponse, "description": "The database can't be reached."}
+    },
+)
+def ready(db: Session = Depends(get_db)) -> HealthResponse:
+    """Reports whether the API can query its database, so a host can hold back
+    traffic until it can. Returns a 503 when it can't; the cause is logged, not
+    returned."""
+    try:
+        db.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        # The error can name the database host and user, so it stays in the log.
+        logger.warning("Readiness check failed", exc_info=True)
+        raise HTTPException(status_code=503, detail="database unavailable")
     return HealthResponse(status="ok")

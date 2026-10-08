@@ -28,6 +28,8 @@ This starts a PostgreSQL container and the API on `http://localhost:8000`.
 
 - API docs: `http://localhost:8000/docs`
 - Health check: `http://localhost:8000/health`
+- Readiness check: `http://localhost:8000/ready`. Returns 503 when the API
+  can't reach the database; use this as a host's health check URL.
 
 ## Database migrations
 

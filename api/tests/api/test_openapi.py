@@ -99,6 +99,16 @@ def test_buildings_documents_its_response(spec: dict):
     assert schema["$ref"].endswith("/BuildingList")
 
 
+def test_ready_documents_its_responses(spec: dict):
+    responses = spec["paths"]["/ready"]["get"]["responses"]
+
+    def schema_ref(code: str) -> str:
+        return responses[code]["content"]["application/json"]["schema"]["$ref"]
+
+    assert schema_ref("200").endswith("/HealthResponse")
+    assert schema_ref("503").endswith("/ErrorResponse")
+
+
 def test_every_schema_reference_resolves(spec: dict):
     """A $ref to a schema that isn't generated renders as an error in /docs."""
     defined = set(spec["components"]["schemas"])
