@@ -41,6 +41,7 @@ from ingestion.persist import (
     run_import,
     taxonomy_term_id,
 )
+from ingestion.report import build_report, format_report
 
 logger = logging.getLogger("ingestion.cli")
 
@@ -379,6 +380,17 @@ def _import_run(
     return EXIT_OK
 
 
+def _import_report(args: argparse.Namespace, db: Session) -> int:
+    term = _resolve_term(db, args.term)
+    report = build_report(db, term)
+    if report.last_import is None:
+        raise CliError(
+            f"term {term.term_id} ({term.name}) has no completed import to report on"
+        )
+    print(format_report(report))
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m ingestion.cli",
@@ -455,6 +467,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="import a term even if it's archived",
     )
     run.set_defaults(handler=_import_run, needs_scraper=True)
+
+    report = import_commands.add_parser(
+        "report", help="check the quality of a term's imported data"
+    )
+    report.add_argument("term", help="term id or exact name")
+    report.set_defaults(handler=_import_report)
 
     buildings = commands.add_parser("buildings", help="manage building data")
     buildings_commands = buildings.add_subparsers(

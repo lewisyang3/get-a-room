@@ -660,3 +660,32 @@ def test_buildings_set_locations_rejects_a_bad_file_without_changes(
 
     assert message in capsys.readouterr().err
     assert db.query(Building).one().latitude is None
+
+
+def test_import_report_prints_the_report(cli, db: Session, term: Term, capsys):
+    db.add(
+        ImportRun(
+            term_id=term.term_id,
+            started_at=datetime(2026, 10, 5, 7, 0, tzinfo=timezone.utc),
+            completed_at=datetime(2026, 10, 5, 7, 30, tzinfo=timezone.utc),
+            source_url=term.source_url,
+            status=ImportStatus.COMPLETED,
+            records_read=3,
+            records_imported=1,
+            records_rejected=2,
+            rejection_counts={"online": 2},
+        )
+    )
+    db.commit()
+
+    assert cli("import", "report", term.name) == 0
+
+    out = capsys.readouterr().out
+    assert out.startswith(f"Data-quality report: {term.name} (term {term.term_id})")
+    assert "3 read: 1 imported, 2 rejected, 0 failed" in out
+
+
+def test_import_report_needs_a_completed_import(cli, term: Term, capsys):
+    assert cli("import", "report", str(term.term_id)) == 2
+
+    assert "has no completed import to report on" in capsys.readouterr().err
