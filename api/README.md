@@ -117,6 +117,42 @@ Give whatever stops an import a longer grace period than the request timeout:
 for example `docker stop -t 60`, `stop_grace_period: 60s` in Compose, or your
 scheduler's equivalent.
 
+### Checking an import
+
+```bash
+python -m ingestion.cli import report "Fall 2026"
+```
+
+prints a data-quality report for the term's current data. Run it after each
+import. It exits with 2 if the term has no completed import. It shows:
+
+- **Last import:** sections read, imported, rejected and failed, and the
+  rejections by reason, most common first. Runs from before reasons were
+  recorded say so.
+- **Coverage:** buildings, the covered ones still missing coordinates (add them
+  to `data/building_locations.csv`), rooms, sections and meetings by type, and
+  meetings outside 07:00-22:00, the hours availability covers.
+- **Duplicate checks:** exact duplicates are blocked by database constraints,
+  so this lists likely ones they can't catch: room numbers in one building that
+  differ only in case, spacing, punctuation or leading zeros, building names
+  that differ only by a word like "Hall", and different sections meeting in
+  one room at overlapping times. Overlaps are usually cross-listed courses or
+  lab sections sharing a room, but a wrong room parse looks the same.
+- **Rooms in use, by building.**
+- **Sample availability:** how many searchable rooms are free Monday to Friday
+  at 10:00, 14:00 and 18:00, and a few rooms free on Monday at 10:00.
+
+Rejection reasons:
+
+| Reason | Meaning |
+|---|---|
+| `section_type_not_room_occupying:TYPE` | Not a lecture, discussion, lab, group or recitation section (e.g. `IND` independent study, `SEM` seminar), so it isn't tied to a scheduled room. |
+| `no_meetings` | No meeting days and times. |
+| `online` | Taught online. |
+| `general_assignment_requested` | No room assigned yet ("Requested General Assignment"). |
+| `missing_location` | No location given. |
+| `unparseable_location` | A location that isn't a building and room, e.g. an off-campus site. |
+
 ### Known limitations
 
 - **Concurrent runs aren't prevented.** Two `import run` commands for the same
