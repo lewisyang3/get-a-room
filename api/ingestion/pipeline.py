@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Iterator
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 
 from ingestion.enumerate import enumerate_section_urls
 from ingestion.fetch import FetchError, SectionSession, fetch
@@ -17,6 +18,8 @@ class PipelineStats:
     accepted: int = 0
     rejected: int = 0
     failed: int = 0
+    # How many sections were rejected for each `classify()` reason.
+    rejection_reasons: Counter[str] = field(default_factory=Counter)
 
 
 class IngestionPipeline:
@@ -106,4 +109,5 @@ class IngestionPipeline:
                 self.stats.accepted += 1
             else:
                 self.stats.rejected += 1
+                self.stats.rejection_reasons[section.rejection_reason] += 1
             yield section

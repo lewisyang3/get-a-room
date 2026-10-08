@@ -44,6 +44,9 @@ def test_pipeline_end_to_end_counts_and_yields():
     assert pipeline.stats.accepted == 1  # lec-with-room
     assert pipeline.stats.rejected == 1  # ind-no-meetings, wrong type
     assert pipeline.stats.failed == 1  # missing-page, 404
+    assert pipeline.stats.rejection_reasons == {
+        "section_type_not_room_occupying:IND": 1
+    }
 
 
 def test_pipeline_survives_a_malformed_section_page():

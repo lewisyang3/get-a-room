@@ -238,6 +238,7 @@ def test_run_import_end_to_end(db: Session, term: Term):
     assert result.records_read == 2
     assert result.records_imported == 1
     assert result.records_rejected == 1
+    assert result.rejection_counts == {"section_type_not_room_occupying:IND": 1}
     assert result.records_failed == 0
     assert result.completed_at is not None
 
@@ -330,6 +331,25 @@ def test_run_import_records_enumeration_failure_and_reraises(db: Session, term: 
     assert import_run.status == ImportStatus.FAILED
     assert import_run.error_message is not None
     assert db.query(Meeting).count() == 0
+
+
+def test_run_import_records_rejection_reasons_on_a_failed_run(db: Session, term: Term):
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        if path.startswith("/taxonomy/term/"):
+            page = (params or {}).get("page", 0)
+            if page == 0:
+                return FakeResponse(
+                    200, text='<a href="/content/ind-no-meetings">A</a>'
+                )
+            return FakeResponse(403, text="Forbidden")
+        return FakeResponse(200, text=(FIXTURES / "ind_no_meetings.html").read_text())
+
+    with pytest.raises(FetchError):
+        run_import(db, FakeSession(handler), term.term_id, rate_limit_seconds=0)
+
+    import_run = db.query(ImportRun).filter_by(term_id=term.term_id).one()
+    assert import_run.status == ImportStatus.FAILED
+    assert import_run.rejection_counts == {"section_type_not_room_occupying:IND": 1}
 
 
 def test_run_import_records_zero_imported_on_a_failure_after_partial_success(

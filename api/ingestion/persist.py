@@ -365,6 +365,7 @@ def run_import(
         import_run.records_read = pipeline.stats.read
         import_run.records_imported = pipeline.stats.accepted
         import_run.records_rejected = pipeline.stats.rejected
+        import_run.rejection_counts = dict(pipeline.stats.rejection_reasons)
         import_run.records_failed = pipeline.stats.failed
         db.commit()
     except (Exception, KeyboardInterrupt) as exc:
@@ -388,6 +389,7 @@ def run_import(
                 # classified as accepted before the failure.
                 records_imported=0,
                 records_rejected=pipeline.stats.rejected,
+                rejection_counts=dict(pipeline.stats.rejection_reasons),
                 records_failed=pipeline.stats.failed,
                 status=ImportStatus.FAILED,
                 # KeyboardInterrupt() has an empty message.
