@@ -7,7 +7,8 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # On main, let a run finish so a deploy is never cut off partway.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -27,3 +28,43 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # Publishes the site to GitHub Pages after a push to main passes the checks.
+  deploy:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # A newer deploy waits for this one to finish.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+        env:
+          # Served at https://get-a-room-berkeley.github.io/get-a-room-web/.
+          # Remove this when the site moves to a custom domain.
+          BASE_PATH: /get-a-room-web/
+          # Repository variables (Settings → Secrets and variables → Actions),
+          # built into the public page. Search stays disabled until
+          # VITE_TERM_ID and VITE_MAPBOX_TOKEN are set.
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_TERM_ID: ${{ vars.VITE_TERM_ID }}
+          VITE_MAPBOX_TOKEN: ${{ vars.VITE_MAPBOX_TOKEN }}
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v5
