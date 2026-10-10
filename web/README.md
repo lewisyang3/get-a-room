@@ -3,7 +3,7 @@
 Frontend for **Get a Room**: helps UC Berkeley students find classrooms with no
 scheduled class, so they can use them to study. It's a React + TypeScript app
 built with Vite, and it reads availability from the
-[Get a Room API](https://github.com/lewisyang3/get-a-room).
+[Get a Room API](https://github.com/get-a-room-berkeley/get-a-room-api).
 
 Availability comes from the term's **scheduled** classes, which limits what it
 can tell you (see below).
