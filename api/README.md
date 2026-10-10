@@ -335,3 +335,9 @@ one-off repo-wide format commit is listed in `.git-blame-ignore-revs`; run
 
 See `.env.example` for the full list, including `DATABASE_URL`, `APP_ENV`,
 `ALLOWED_ORIGINS`, and scraper rate-limit/timeout settings.
+
+`DATABASE_URL` may also use the `postgres://` scheme, as Heroku sets it; it's
+read as `postgresql+psycopg2://`. Connections to the database time out after
+5 seconds.
+
+The Docker image's server listens on `$PORT`, or on 8000 if `PORT` isn't set.
