@@ -341,3 +341,28 @@ read as `postgresql+psycopg2://`. Connections to the database time out after
 5 seconds.
 
 The Docker image's server listens on `$PORT`, or on 8000 if `PORT` isn't set.
+
+## Deploying to Heroku
+
+The API runs on Heroku's container stack with Heroku Postgres. `heroku.yml`
+builds the `Dockerfile`, and its release phase runs `alembic upgrade head`
+before each new version starts; if a migration fails, the release is cancelled
+and the previous version keeps serving.
+
+One-time setup:
+
+```bash
+heroku create <app> --stack container
+heroku addons:create heroku-postgresql:essential-0 -a <app>   # sets DATABASE_URL
+heroku config:set APP_ENV=production \
+  ALLOWED_ORIGINS=https://getaroomberkeley.me -a <app>
+```
+
+Deploy by pushing `main` to the `heroku` remote:
+
+```bash
+git push heroku main
+```
+
+Check `https://<app>.herokuapp.com/ready` afterwards; it returns 503 if the
+database can't be reached.
