@@ -54,9 +54,6 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
-          # Served at https://get-a-room-berkeley.github.io/get-a-room-web/.
-          # Remove this when the site moves to a custom domain.
-          BASE_PATH: /get-a-room-web/
           # Repository variables (Settings → Secrets and variables → Actions),
           # built into the public page. Search stays disabled until
           # VITE_TERM_ID and VITE_MAPBOX_TOKEN are set.
