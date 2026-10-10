@@ -4,8 +4,8 @@ import { defineConfig } from 'vitest/config'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  // GitHub Pages serves a project site under /<repo>/, so the deploy job sets
-  // BASE_PATH. A custom domain serves it at the root, the default.
+  // The site is served at the root of its custom domain. Set BASE_PATH to
+  // serve it under a path instead, e.g. /<repo>/ on a github.io address.
   base: process.env.BASE_PATH ?? '/',
   server: {
     // The API's default allowed CORS origin is http://localhost:3000, so the
