@@ -366,3 +366,14 @@ git push heroku main
 
 Check `https://<app>.herokuapp.com/ready` afterwards; it returns 503 if the
 database can't be reached.
+
+A new database is empty, so the API returns no results until a term is
+imported. Run the import from your own machine against the Heroku database
+(see "Importing a term" for `term create`'s arguments; a full term takes about
+8 hours):
+
+```bash
+export DATABASE_URL=$(heroku config:get DATABASE_URL -a <app>)
+python -m ingestion.cli term create --name "Fall 2026" ...
+caffeinate -is python -m ingestion.cli import run "Fall 2026"
+```
