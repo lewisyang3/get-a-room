@@ -5,25 +5,90 @@ from enum import Enum
 
 # Import SQLAlchemy libraries for columns and constraints
 from sqlalchemy import (
+    DDL,
     CheckConstraint,
+    ColumnElement,
+    Computed,
     Date,
     DateTime,
     Enum as SqlEnum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     String,
     Time,
     UniqueConstraint,
+    cast,
+    event,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, ExcludeConstraint
+from sqlalchemy.types import UserDefinedType
 
 # Import SQLAlchemy libraries for relationships
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 # Import base class for db models
 from app.db import Base
+
+
+# Postgres has no built-in time-of-day range, so this defines `timerange`,
+# following the Postgres docs' example. btree_gist lets one GiST index hold
+# the integer columns alongside the range. Alembic's add_time_ranges
+# migration runs the same statements; these run on create_all, as in tests.
+TIMERANGE_DDL = (
+    "CREATE EXTENSION IF NOT EXISTS btree_gist",
+    """
+    CREATE OR REPLACE FUNCTION time_subtype_diff(x time, y time) RETURNS float8
+    AS 'SELECT EXTRACT(EPOCH FROM (x - y))' LANGUAGE sql STRICT IMMUTABLE
+    """,
+    """
+    DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'timerange') THEN
+            CREATE TYPE timerange AS RANGE (
+                subtype = time, subtype_diff = time_subtype_diff
+            );
+        END IF;
+    END $$
+    """,
+)
+DROP_TIMERANGE_DDL = (
+    "DROP TYPE IF EXISTS timerange",
+    "DROP FUNCTION IF EXISTS time_subtype_diff(time, time)",
+)
+
+for statement in TIMERANGE_DDL:
+    event.listen(Base.metadata, "before_create", DDL(statement))
+for statement in DROP_TIMERANGE_DDL:
+    event.listen(Base.metadata, "after_drop", DDL(statement))
+
+
+class TimeRange(UserDefinedType):
+    """The `timerange` type. Only queried with range operators, never read."""
+
+    cache_ok = True
+
+    def get_col_spec(self, **kw) -> str:
+        return "timerange"
+
+
+# Half-open, like the times themselves: a class ending at 11:00 and the next
+# starting at 11:00 don't overlap.
+TIME_RANGE_SQL = "timerange(start_time, end_time, '[)')"
+
+
+def time_range_column() -> Mapped[str]:
+    # Generated from start_time and end_time, so code writes those as before.
+    # Deferred keeps it out of ordinary loads.
+    return mapped_column(
+        TimeRange, Computed(TIME_RANGE_SQL, persisted=True), deferred=True
+    )
+
+
+def contains_time(time_range: ColumnElement, at: time) -> ColumnElement[bool]:
+    """Whether `time_range` includes `at`, using its GiST index."""
+    return time_range.op("@>")(cast(at, Time))
 
 
 class TermStatus(str, Enum):
@@ -115,6 +180,7 @@ class Meeting(Base):
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
     meeting_type: Mapped[str] = mapped_column(String(20), nullable=False)
     source_record_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    time_range: Mapped[str] = time_range_column()
 
     room: Mapped["Room"] = relationship(back_populates="meetings")
     term: Mapped["Term"] = relationship(back_populates="meetings")
@@ -135,6 +201,16 @@ class Meeting(Base):
             "end_time",
             name="uq_meeting_identity",
         ),
+        # No exclusion constraint: a room's meetings can really overlap,
+        # e.g. cross-listed sections, and the import report counts them.
+        Index(
+            "ix_meeting_time_range",
+            "term_id",
+            "room_id",
+            "day_of_week",
+            "time_range",
+            postgresql_using="gist",
+        ),
     )
 
 
@@ -148,6 +224,7 @@ class AvailabilityInterval(Base):
     start_time: Mapped[time] = mapped_column(Time, nullable=False)
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
     source_version: Mapped[str | None] = mapped_column(String(100))
+    time_range: Mapped[str] = time_range_column()
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -159,6 +236,16 @@ class AvailabilityInterval(Base):
         CheckConstraint(
             "day_of_week BETWEEN 0 AND 6",
             name="ck_availability_interval_day_of_week",
+        ),
+        # A room's free intervals on a day never overlap. The constraint's
+        # GiST index also serves searches by term, weekday, and time.
+        ExcludeConstraint(
+            ("term_id", "="),
+            ("day_of_week", "="),
+            ("time_range", "&&"),
+            ("room_id", "="),
+            using="gist",
+            name="ex_availability_interval_no_overlap",
         ),
     )
 

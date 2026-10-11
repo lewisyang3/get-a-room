@@ -21,6 +21,7 @@ from app.models.models import (
     Meeting,
     Room,
     Term,
+    contains_time,
 )
 
 # The hours availability covers: recompute_availability's day_start/day_end.
@@ -236,8 +237,7 @@ def _duplicates(db: Session, term_id: int) -> Duplicates:
         second.source_record_id > first.source_record_id,
         # Half-open: one class ending at 11:00 and the next starting at 11:00
         # don't overlap.
-        first.start_time < second.end_time,
-        second.start_time < first.end_time,
+        first.time_range.op("&&")(second.time_range),
     )
     pairs = (
         select(first, second, Room.room_number, Building.name)
@@ -293,8 +293,7 @@ def _free_at(term_id: int, day_of_week: int, at: time):
             searchable_rooms(),
             AvailabilityInterval.term_id == term_id,
             AvailabilityInterval.day_of_week == day_of_week,
-            AvailabilityInterval.start_time <= at,
-            AvailabilityInterval.end_time > at,
+            contains_time(AvailabilityInterval.time_range, at),
         )
     )
 

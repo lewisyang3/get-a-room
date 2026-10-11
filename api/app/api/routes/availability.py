@@ -18,7 +18,13 @@ from app.api.schemas.availability import (
 )
 from app.api.schemas.errors import ErrorResponse, ValidationErrorResponse
 from app.db import get_db
-from app.models.models import AvailabilityInterval, Building, Room, Term
+from app.models.models import (
+    AvailabilityInterval,
+    Building,
+    Room,
+    Term,
+    contains_time,
+)
 
 # Creates a router for availability-related endpoints.
 router = APIRouter(
@@ -337,8 +343,7 @@ def _matching_intervals(db: Session, search: _Search, now: datetime) -> _Matches
         .where(
             AvailabilityInterval.term_id == search.term_id,
             AvailabilityInterval.day_of_week == day_of_week,
-            AvailabilityInterval.start_time <= requested_time,
-            AvailabilityInterval.end_time > requested_time,
+            contains_time(AvailabilityInterval.time_range, requested_time),
             # Keeps only intervals at least minimum_minutes long from now on.
             AvailabilityInterval.end_time >= threshold.time(),
             searchable_rooms(),
