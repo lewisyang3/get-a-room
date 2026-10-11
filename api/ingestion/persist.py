@@ -249,6 +249,12 @@ def run_import(
     missing term or an unusable source_url raises before anything is
     written, including the ImportRun (it's a caller error, not a failed run).
 
+    The whole term is scraped before anything is written: the scrape takes
+    hours, and a database connection held open that long (e.g. to Heroku)
+    can be dropped mid-run, failing it. So the read of the term ends its
+    transaction before scraping, and all of the run's writes happen
+    afterwards, in one short transaction.
+
     Commits only happen once, at the very end - never mid-run - so a crash
     can't leave a half-written ImportRun row. On any failure after the
     argument checks - including a KeyboardInterrupt, which the CLI also
@@ -292,6 +298,9 @@ def run_import(
         raise ValueError(f"term {term_id} does not exist")
     source_url = term.source_url
     taxonomy_id = taxonomy_term_id(source_url)
+    # Ends the read's transaction, returning its connection to the pool for
+    # the scrape (pool_pre_ping replaces it afterwards if it was dropped).
+    db.rollback()
 
     pipeline = IngestionPipeline(
         session, rate_limit_seconds=rate_limit_seconds, max_pages=max_pages
@@ -301,6 +310,9 @@ def run_import(
     building_cache: _BuildingCache = {}
     room_cache: _RoomCache = {}
     try:
+        sections = list(pipeline.run(taxonomy_id))
+        fetched_at = datetime.now(timezone.utc)
+
         # Inside the try: a failure here must still record a FAILED run.
         import_run = ImportRun(
             term_id=term_id,
@@ -318,14 +330,13 @@ def run_import(
             .filter_by(term_id=term_id)
             .distinct()
         }
-        for section in pipeline.run(taxonomy_id):
+        for section in sections:
             if is_accepted(section):
                 persist_section(db, term_id, section, seen, building_cache, room_cache)
         if pipeline.stats.read == 0:
             raise ImportAborted(
                 f"enumeration of taxonomy term {taxonomy_id} returned no sections"
             )
-        fetched_at = datetime.now(timezone.utc)
         if pipeline.stats.failed:
             logger.warning(
                 "import run for term %s: skipping stale-meeting retirement - "

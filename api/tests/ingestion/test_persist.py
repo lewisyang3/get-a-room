@@ -682,8 +682,8 @@ def _fail_flush_when(db: Session, predicate) -> None:
 
 
 def test_run_import_records_a_failure_while_starting_the_run(db: Session, term: Term):
-    """A failure writing the RUNNING row - before any scraping - must still
-    be recorded, not escape with no ImportRun at all."""
+    """A failure writing the RUNNING row - the run's first write - must
+    still be recorded, not escape with no ImportRun at all."""
     _fail_flush_when(
         db,
         lambda obj: isinstance(obj, ImportRun) and obj.status == ImportStatus.RUNNING,
@@ -700,6 +700,22 @@ def test_run_import_records_a_failure_while_starting_the_run(db: Session, term: 
     [failed] = db.query(ImportRun).all()
     assert failed.status == ImportStatus.FAILED
     assert exc_info.value.import_run_id == failed.import_id
+
+
+def test_run_import_holds_no_transaction_open_while_scraping(db: Session, term: Term):
+    """The scrape takes hours, and a connection held open that long can be
+    dropped mid-run - so no transaction may be open while it runs."""
+    in_transaction: list[bool] = []
+    serve = listing_handler("lec-with-room", "ind-no-meetings")
+
+    def handler(path: str, params: dict | None) -> FakeResponse:
+        in_transaction.append(db.in_transaction())
+        return serve(path, params)
+
+    result = run_import(db, FakeSession(handler), term.term_id, rate_limit_seconds=0)
+
+    assert result.status == ImportStatus.COMPLETED
+    assert in_transaction and not any(in_transaction)
 
 
 def test_run_import_records_an_interrupt_and_reraises_it(db: Session, term: Term):
