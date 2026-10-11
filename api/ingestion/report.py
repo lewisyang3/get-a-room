@@ -7,7 +7,7 @@
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import time
+from datetime import time, timezone
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, aliased
@@ -362,9 +362,11 @@ def _format_last_import(last: LastImport | None) -> list[str]:
         return lines + ["  None completed."]
     run = last.run
     minutes = round((run.completed_at - run.started_at).total_seconds() / 60)
+    # The driver returns the session's zone, which isn't always UTC.
+    completed = run.completed_at.astimezone(timezone.utc)
     lines += [
         f"  Import {run.import_id}, completed "
-        f"{run.completed_at:%Y-%m-%d %H:%M} UTC in {minutes} min",
+        f"{completed:%Y-%m-%d %H:%M} UTC in {minutes} min",
         f"  {run.records_read} read: {run.records_imported} imported, "
         f"{run.records_rejected} rejected, {run.records_failed} failed",
     ]

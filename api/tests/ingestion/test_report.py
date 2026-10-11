@@ -1,6 +1,7 @@
 from datetime import datetime, time, timedelta, timezone
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.models import Building, ImportRun, ImportStatus, Meeting, Room, Term
@@ -112,6 +113,18 @@ def test_a_run_from_before_reasons_were_recorded_says_so(db: Session, term: Term
     text = format_report(build_report(db, term))
 
     assert "Rejection reasons weren't recorded for this run." in text
+
+
+def test_completion_time_is_shown_in_utc_whatever_the_session_zone(
+    db: Session, term: Term
+):
+    add_run(db, term, ImportStatus.COMPLETED)
+    db.execute(text("SET TIME ZONE 'America/Los_Angeles'"))
+    db.expire_all()  # reload completed_at in the session's zone
+
+    report = format_report(build_report(db, term))
+
+    assert "completed 2026-10-05 07:30 UTC" in report
 
 
 def test_coverage_counts(db: Session, term: Term, dwinelle: Building):
