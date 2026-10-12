@@ -60,12 +60,14 @@ Imports are run by hand with the operator CLI (`python -m ingestion.cli --help`)
 With the database migrated, create the term once, pointing it at the term's
 page on classes.berkeley.edu, then import it. The source URL must be exactly
 `https://classes.berkeley.edu/taxonomy/term/{id}`, and each taxonomy id can
-belong to only one term:
+belong to only one term. Check the id before importing: the page's heading
+names its term (8588 is "2026 Fall-1"; 8573 is "2025 Fall-1"), and its section
+links start with that term, e.g. `/content/2026-fall-…`.
 
 ```bash
 python -m ingestion.cli term create --name "Fall 2026" \
-    --start 2026-08-19 --end 2026-12-18 \
-    --source-url https://classes.berkeley.edu/taxonomy/term/8573
+    --start 2026-08-26 --end 2026-12-11 \
+    --source-url https://classes.berkeley.edu/taxonomy/term/8588
 python -m ingestion.cli term list
 python -m ingestion.cli import run "Fall 2026"
 ```
@@ -80,9 +82,12 @@ Inside Docker Compose, prefix commands with `docker compose run --rm api`,
 e.g. `docker compose run --rm api python -m ingestion.cli term list`.
 
 `import run` scrapes every section in the term, one request per
-`SCRAPER_RATE_LIMIT_SECONDS` (a full term is about 11,000 requests, roughly 8
-hours), logs progress every 100 sections, recomputes the term's
-availability, and records the run as an `ImportRun`. A completed run also
+`SCRAPER_RATE_LIMIT_SECONDS` (a full term is about 11,000 requests, roughly
+8-12 hours depending on how fast Berkeley responds), logs progress every 100
+sections, recomputes the term's availability, and records the run as an
+`ImportRun`. Nothing is written until the scrape finishes; then the whole run
+is saved in one short transaction, so a dropped database connection during
+the scrape doesn't fail it. A completed run also
 stamps the term's `processed_at` (shown as `PROCESSED` in `term list`); a
 failed run leaves it unchanged, so it always says when the term's current data
 was imported. Re-running is safe: meetings are upserted, and ones the term no
@@ -406,7 +411,7 @@ database can't be reached.
 A new database is empty, so the API returns no results until a term is
 imported. Run the import from your own machine against the Heroku database
 (see "Importing a term" for `term create`'s arguments; a full term takes about
-8 hours). Imports leave building coordinates empty, so set them afterwards or
+8-12 hours). Imports leave building coordinates empty, so set them afterwards or
 the map shows no buildings (see "Building locations"):
 
 ```bash
