@@ -147,6 +147,20 @@ def test_online_lec_has_meetings_but_no_room():
     ]
 
 
+def test_plain_text_location_without_a_map_link_is_split():
+    section = parse_section(
+        _load("plain_text_location.html"), slug="plain-text-location"
+    )
+
+    assert section.building_name == "Social Sciences Building"
+    assert section.room_number == "155"
+    assert section.location_raw == "Social Sciences Building 155"
+    assert section.meetings == [
+        ParsedMeeting(day_of_week=1, start_time=time(14, 0), end_time=time(15, 30)),
+        ParsedMeeting(day_of_week=3, start_time=time(14, 0), end_time=time(15, 30)),
+    ]
+
+
 def test_location_without_a_room_number_keeps_the_raw_text():
     section = parse_section(
         _load("lec_unparseable_location.html"), slug="lec-unparseable-location"

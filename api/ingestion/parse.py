@@ -82,15 +82,16 @@ def _parse_location(
     """Returns (building_name, room_number, location_raw)."""
     if location_div is None:
         return None, None, None
+    # Most rooms are a campus-map link, but some buildings (e.g. "Social
+    # Sciences Building 155") are plain text with no link, so both are split.
+    # Text with no trailing room number, like "Internet/Online" or
+    # "Requested General Assignment", doesn't split.
     link = location_div.find("a")
-    if link is not None:
-        text = _normalize_ws(link.get_text())
-        building, room = _split_building_room(text)
-        return building, room, text
-    text = _normalize_ws(location_div.get_text())
+    text = _normalize_ws((link or location_div).get_text())
     if not text:
         return None, None, None
-    return None, None, text
+    building, room = _split_building_room(text)
+    return building, room, text
 
 
 def parse_section(html: str, slug: str) -> ParsedSection:

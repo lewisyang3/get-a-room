@@ -1,6 +1,6 @@
 # Section fixtures
 
-Real Fall 2025 section pages from classes.berkeley.edu, used by
+Real Fall 2025 and Fall 2026 section pages from classes.berkeley.edu, used by
 `tests/ingestion/test_parse.py`, `test_filter.py` and the pipeline tests. They
 are snapshots, so the live pages may have changed since.
 
@@ -11,6 +11,7 @@ are snapshots, so the live pages may have changed since.
 | `grp_with_room.html` | ASTRON 98 GRP 001 | Normal class; two days | Campbell Hall 131 | 2 | accepted |
 | `lec_three_days.html` | CHEM 122 LEC 001 | Multiple meeting days (Mo, We, Fr) | Evans 35 | 3 | accepted |
 | `grp_two_meeting_blocks.html` | COMPSCI 198 GRP 075 | Multiple meeting days, in two blocks with different times | Soda 306 | 2 | accepted |
+| `plain_text_location.html` | SEASIAN 137 SEM 001 (Fall 2026) | Room as plain text, not a map link | Social Sciences Building 155 | 2 | `section_type_not_room_occupying:SEM` |
 | `lec_online.html` | EPS 80 LEC 002 | Online class | Internet/Online | 2 | `online` |
 | `lec_general_assignment.html` | MECENG 165 LEC 01 | Missing room: not assigned yet | Requested General Assignment | 2 | `general_assignment_requested` |
 | `grp_missing_location.html` | COLWRIT 198 GRP 005 | Missing room: no location at all | (none) | 1 | `missing_location` |
