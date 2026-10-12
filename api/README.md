@@ -156,7 +156,7 @@ Rejection reasons:
 
 | Reason | Meaning |
 |---|---|
-| `section_type_not_room_occupying:TYPE` | Not a lecture, discussion, lab, group or recitation section (e.g. `IND` independent study, `SEM` seminar), so it isn't tied to a scheduled room. |
+| `section_type_not_room_occupying:TYPE` | Not a lecture, discussion, lab, group, recitation, seminar or studio section (e.g. `IND` independent study, `TUT` tutorial), so it isn't tied to a scheduled room. |
 | `no_meetings` | No meeting days and times. |
 | `online` | Taught online. |
 | `general_assignment_requested` | No room assigned yet ("Requested General Assignment"). |

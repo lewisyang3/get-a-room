@@ -11,7 +11,9 @@ are snapshots, so the live pages may have changed since.
 | `grp_with_room.html` | ASTRON 98 GRP 001 | Normal class; two days | Campbell Hall 131 | 2 | accepted |
 | `lec_three_days.html` | CHEM 122 LEC 001 | Multiple meeting days (Mo, We, Fr) | Evans 35 | 3 | accepted |
 | `grp_two_meeting_blocks.html` | COMPSCI 198 GRP 075 | Multiple meeting days, in two blocks with different times | Soda 306 | 2 | accepted |
-| `plain_text_location.html` | SEASIAN 137 SEM 001 (Fall 2026) | Room as plain text, not a map link | Social Sciences Building 155 | 2 | `section_type_not_room_occupying:SEM` |
+| `plain_text_location.html` | SEASIAN 137 SEM 001 (Fall 2026) | Room as plain text, not a map link | Social Sciences Building 155 | 2 | accepted |
+| `sem_with_room.html` | HISTORY 103A SEM 001 (Fall 2026) | Seminar in a classroom | Dwinelle 2303 | 1 | accepted |
+| `std_with_room.html` | ART 12 STD 001 (Fall 2026) | Studio; room as plain text | Anthro/Art Practice Bldg 365 | 2 | accepted |
 | `lec_online.html` | EPS 80 LEC 002 | Online class | Internet/Online | 2 | `online` |
 | `lec_general_assignment.html` | MECENG 165 LEC 01 | Missing room: not assigned yet | Requested General Assignment | 2 | `general_assignment_requested` |
 | `grp_missing_location.html` | COLWRIT 198 GRP 005 | Missing room: no location at all | (none) | 1 | `missing_location` |

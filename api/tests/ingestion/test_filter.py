@@ -27,6 +27,14 @@ def test_dis_with_room_is_accepted():
     assert is_accepted(section)
 
 
+def test_sem_with_room_is_accepted():
+    assert is_accepted(classify(_parse("sem_with_room.html")))
+
+
+def test_std_with_room_is_accepted():
+    assert is_accepted(classify(_parse("std_with_room.html")))
+
+
 def test_lec_general_assignment_is_rejected():
     section = classify(_parse("lec_general_assignment.html"))
     assert not is_accepted(section)

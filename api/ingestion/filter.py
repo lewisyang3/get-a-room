@@ -1,9 +1,10 @@
 from ingestion.types import ParsedSection
 
 # Per GAR-017: these are the section types reliably tied to a scheduled
-# room. IND/TUT are never assigned a room; anything else observed
-# (SEM, FLD, INT, ...) is dropped too rather than guessed at.
-ROOM_OCCUPYING_TYPES = {"LEC", "DIS", "LAB", "GRP", "REC"}
+# room. SEM and STD were added once Fall 2026 pages showed most seminars
+# and studios list a real classroom. IND/TUT are never assigned a room;
+# anything else observed (FLD, INT, ...) is dropped rather than guessed at.
+ROOM_OCCUPYING_TYPES = {"LEC", "DIS", "LAB", "GRP", "REC", "SEM", "STD"}
 
 
 def _location_rejection_reason(section: ParsedSection) -> str:
