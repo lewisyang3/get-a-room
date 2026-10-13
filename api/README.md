@@ -1,422 +1,91 @@
 # Get a Room API
 
-Backend for **Get a Room**: helps UC Berkeley students find scheduled classroom
-space that's free to study in right now, how long it stays free, and where it is.
+The backend for **Get a Room**, which helps UC Berkeley students find a
+classroom to study in. It serves the site at **https://getaroomberkeley.me**.
 
-## Architecture
+## The problem
 
-- `app/` — FastAPI application (`main.py`), config (`config.py`), DB setup (`db.py`),
-  API routers (`app/api/`), and SQLAlchemy models (`app/models/`).
-- `alembic/` — database migrations.
-- `ingestion/` — Berkeley schedule scraper, parser, import into the database
-  (`persist.py`'s `run_import`), and the operator CLI (`cli.py`).
-- `tests/` — pytest suite.
+Classrooms sit empty for hours between classes, and they're often the quietest
+place on campus to study. But there's no easy way to know which ones are free
+right now, or how long they'll stay that way, short of walking the halls and
+checking doors.
+
+## How Get a Room solves it
+
+Every class's room and meeting times are published in Berkeley's class
+schedule. If a room has no class scheduled now, it's free until its next one.
+
+```
+classes.berkeley.edu ──import──▶ Postgres ◀── this API ◀── get-a-room-web ◀── students
+```
+
+This repo does three things:
+
+1. **Imports a term.** An operator runs the import by hand once per term. It
+   scrapes every section in the term from classes.berkeley.edu and keeps those
+   that meet in a scheduled room: lectures, discussions, labs, seminars and
+   so on. Then it stores each room's weekly meeting times.
+2. **Works out free time.** A room is free between its meetings, within
+   07:00–22:00 in the term's timezone.
+3. **Answers questions about it** through three read-only endpoints:
+   - `/availability`: which rooms are free at a given time, and until when.
+   - `/availability/buildings`: how many rooms are free in each building, for
+     the map.
+   - `/buildings`: every building, with its location.
+
+[get-a-room-web](https://github.com/get-a-room-berkeley/get-a-room-web) is the
+search page and campus map that students use; it calls these endpoints. The API
+runs on Heroku with Heroku Postgres, and the site on GitHub Pages.
 
 Availability is derived from **scheduled** course data — this does not guarantee a
-room is unlocked, permitted for student use, or actually unoccupied.
+room is unlocked, permitted for student use, or actually unoccupied. The web
+README's
+[What it can and can't tell you](https://github.com/get-a-room-berkeley/get-a-room-web#what-it-can-and-cant-tell-you)
+has the full list.
 
-## Local setup
+## Quick start
 
 Prerequisites: Docker and Docker Compose.
 
 ```bash
 cp .env.example .env
 docker compose up --build
+docker compose exec api alembic upgrade head    # once per new database
 ```
 
-This starts a PostgreSQL container and the API on `http://localhost:8000`.
-
-- API docs: `http://localhost:8000/docs`
-- Health check: `http://localhost:8000/health`
-- Readiness check: `http://localhost:8000/ready`. Returns 503 when the API
-  can't reach the database; use this as a host's health check URL.
-
-## Database migrations
-
-With the `db` service running (`docker compose up db -d`):
+The API is then on `http://localhost:8000`, with interactive docs at
+`http://localhost:8000/docs`. It has no data until a term is imported. Check the
+term's taxonomy id first (see [Importing a term](docs/importing.md)), and expect
+a full import to take 8–12 hours:
 
 ```bash
-pip install -r requirements.txt
-alembic upgrade head
-```
-
-To generate a new migration after changing models in `app/models/`:
-
-```bash
-alembic revision --autogenerate -m "describe the change"
-```
-
-New model modules must be imported and re-exported from `app/models/__init__.py`
-(see the comment there) — Alembic only sees model classes that have actually
-been imported somewhere, and only imports `app.models` itself. A model defined
-in a module that's never imported won't show up in autogenerate.
-
-Keep migrations linear (one head) and make every `downgrade()` fully undo its
-`upgrade()` — CI checks both (see below).
-
-## Importing a term
-
-Imports are run by hand with the operator CLI (`python -m ingestion.cli --help`).
-With the database migrated, create the term once, pointing it at the term's
-page on classes.berkeley.edu, then import it. The source URL must be exactly
-`https://classes.berkeley.edu/taxonomy/term/{id}`, and each taxonomy id can
-belong to only one term. Check the id before importing: the page's heading
-names its term (8588 is "2026 Fall-1"; 8573 is "2025 Fall-1"), and its section
-links start with that term, e.g. `/content/2026-fall-…`.
-
-```bash
-python -m ingestion.cli term create --name "Fall 2026" \
+docker compose exec api python -m ingestion.cli term create --name "Fall 2026" \
     --start 2026-08-26 --end 2026-12-11 \
     --source-url https://classes.berkeley.edu/taxonomy/term/8588
-python -m ingestion.cli term list
-python -m ingestion.cli import run "Fall 2026"
-```
-
-Terms can be referred to by id or exact name. `term create` also takes
-`--timezone` (an IANA zone; default `America/Los_Angeles`) and
-`--status active|archived`;
-`term set-status "Fall 2026" archived` retires a term, after which
-`import run` refuses it unless given `--allow-archived`.
-
-Inside Docker Compose, prefix commands with `docker compose run --rm api`,
-e.g. `docker compose run --rm api python -m ingestion.cli term list`.
-
-`import run` scrapes every section in the term, one request per
-`SCRAPER_RATE_LIMIT_SECONDS` (a full term is about 11,000 requests, roughly
-8-12 hours depending on how fast Berkeley responds), logs progress every 100
-sections, recomputes the term's availability, and records the run as an
-`ImportRun`. Nothing is written until the scrape finishes; then the whole run
-is saved in one short transaction, so a dropped database connection during
-the scrape doesn't fail it. A completed run also
-stamps the term's `processed_at` (shown as `PROCESSED` in `term list`); a
-failed run leaves it unchanged, so it always says when the term's current data
-was imported. Re-running is safe: meetings are upserted, and ones the term no
-longer lists are removed.
-
-A request that times out or loses its connection, or gets an error status
-other than 401, 403 or 404 back, is retried after 5s, 30s and 2 min, with a
-warning logged each time, so an outage of a couple of
-minutes at classes.berkeley.edu doesn't fail the run. A failed listing page
-still fails the whole run once its retries are used up, since the sections
-on it would be missed. On a laptop, keep it awake for the whole run, e.g.
-`caffeinate -is python -m ingestion.cli import run "Fall 2026"` on macOS.
-
-Options:
-
-- `--max-retire-fraction F` (default `0.5`) — abort, keeping the existing
-  data, if the run would remove more than this fraction of the term's
-  sections. A run that finds no sections at all always aborts. Pass `1.0` when
-  a genuinely large change is expected.
-- `--max-pages N` (default `5000`) — fail instead of paging the term listing
-  forever.
-- `--rate-limit-seconds S` — override `SCRAPER_RATE_LIMIT_SECONDS`.
-- `--parser-version V` — recorded on the `ImportRun` for debugging (at most 50
-  characters).
-
-Exit codes, for scripts and schedulers:
-
-| Code | Meaning |
-|---|---|
-| 0 | Import completed. |
-| 1 | Import failed or aborted, and the previously imported data is left untouched. A `FAILED` `ImportRun` is recorded, unless the database itself was unreachable; the log then says `import (not recorded)` and includes the traceback. |
-| 2 | Usage error: bad arguments, unknown or archived term, or a term without a usable source URL. Nothing ran. |
-| 3 | Import completed, but some sections failed to fetch or parse, so removal of classes that disappeared was skipped. Re-run once the source recovers. |
-| 130, 143 | Interrupted by Ctrl-C (130) or SIGTERM (143, e.g. `docker stop` or a scheduler timeout). Handled like exit 1: a `FAILED` `ImportRun` is recorded and previous data is untouched. See the note below. |
-
-A `FAILED` run is recorded for an interrupt only once the signal is actually
-handled. A request already in flight has to finish first, which can take up to
-`SCRAPER_TIMEOUT_SECONDS` (30s by default). Anything that escalates to
-`SIGKILL` before then - including `docker stop`, which waits only 10s by
-default - kills the import with no record, since `SIGKILL` can't be handled.
-Give whatever stops an import a longer grace period than the request timeout:
-for example `docker stop -t 60`, `stop_grace_period: 60s` in Compose, or your
-scheduler's equivalent.
-
-### Checking an import
-
-```bash
-python -m ingestion.cli import report "Fall 2026"
-```
-
-prints a data-quality report for the term's current data. Run it after each
-import. It exits with 2 if the term has no completed import. It shows:
-
-- **Last import:** sections read, imported, rejected and failed, and the
-  rejections by reason, most common first. Runs from before reasons were
-  recorded say so.
-- **Coverage:** buildings, the covered ones still missing coordinates (add them
-  to `data/building_locations.csv`), rooms, sections and meetings by type, and
-  meetings outside 07:00-22:00, the hours availability covers.
-- **Duplicate checks:** exact duplicates are blocked by database constraints,
-  so this lists likely ones they can't catch: room numbers in one building that
-  differ only in case, spacing, punctuation or leading zeros, building names
-  that differ only by a word like "Hall", and different sections meeting in
-  one room at overlapping times. Overlaps are usually cross-listed courses or
-  lab sections sharing a room, but a wrong room parse looks the same.
-- **Rooms in use, by building.**
-- **Sample availability:** how many searchable rooms are free Monday to Friday
-  at 10:00, 14:00 and 18:00, and a few rooms free on Monday at 10:00.
-
-Rejection reasons:
-
-| Reason | Meaning |
-|---|---|
-| `section_type_not_room_occupying:TYPE` | Not a lecture, discussion, lab, group, recitation, seminar or studio section (e.g. `IND` independent study, `TUT` tutorial), so it isn't tied to a scheduled room. |
-| `no_meetings` | No meeting days and times. |
-| `online` | Taught online. |
-| `general_assignment_requested` | No room assigned yet ("Requested General Assignment"). |
-| `missing_location` | No location given. |
-| `unparseable_location` | A location that isn't a building and room, e.g. an off-campus site. |
-
-### Known limitations
-
-- **Concurrent runs aren't prevented.** Two `import run` commands for the same
-  term can run at the same time, and two `term create` commands run at once can
-  both pass the taxonomy-id check and create two terms for one id. The real
-  fix is a unique taxonomy-id column (a migration) plus the non-overlapping
-  scheduled runs planned in GAR-045; until then, run one command at a time.
-- **An interrupt during the final commit can leave two records.** If Ctrl-C or
-  SIGTERM lands after the database has committed the `COMPLETED` run but before
-  the commit call returns, a `FAILED` row is added beside it. The data itself
-  is the completed import's.
-- **Source URLs are validated strictly.** A term's URL must be exactly
-  `https://classes.berkeley.edu/taxonomy/term/{id}`; a stored term that doesn't
-  match (e.g. one created before this rule) fails `import run` with exit 2.
-  Before deploying to a database that already has terms, check their URLs with
-  `python -m ingestion.cli term list`.
-
-## Querying availability
-
-`GET /availability` returns the rooms with no scheduled class at a given time,
-how long each stays free, and the room and building ids. Interactive docs are at
-`/docs` while the API is running.
-
-```bash
-# Right now, in the term's own timezone:
+docker compose exec api python -m ingestion.cli import run "Fall 2026"
+docker compose exec api python -m ingestion.cli buildings set-locations
 curl 'http://localhost:8000/availability?term_id=1'
-# Friday, October 17 at 14:30, in the term's timezone:
-curl 'http://localhost:8000/availability?term_id=1&at=2025-10-17T14:30'
-# Fridays at 14:30, rooms free for at least 90 minutes:
-curl 'http://localhost:8000/availability?term_id=1&day_of_week=4&time=14:30&minimum_minutes=90'
-# Dwinelle 242, right now:
-curl 'http://localhost:8000/availability?term_id=1&building=dwinelle&room=242'
-# Right now, nearest to a point first:
-curl 'http://localhost:8000/availability?term_id=1&near_latitude=37.8736&near_longitude=-122.2577'
 ```
 
-Responses are one page of results:
+## Code layout
 
-```json
-{"total": 42, "limit": 50, "offset": 0,
- "date": "2025-10-17", "day_of_week": 4, "time": "14:30",
- "results": [{"room_id": 7, "building_id": 2, "building_code": "DWINELLE",
-              "building_name": "Dwinelle", "room_number": "242",
-              "available_from": "14:30", "available_until": "17:00",
-              "available_minutes": 150, "distance_meters": null}]}
-```
+- `app/` — FastAPI application (`main.py`), config (`config.py`), DB setup (`db.py`),
+  API routers (`app/api/`), and SQLAlchemy models (`app/models/`).
+- `alembic/` — database migrations.
+- `ingestion/` — Berkeley schedule scraper, parser, import into the database
+  (`persist.py`'s `run_import`), and the operator CLI (`cli.py`).
+- `data/building_locations.csv` — building coordinates, kept by hand.
+- `tests/` — pytest suite.
 
-- Say when to search in one of three ways (combining them is a 422):
-  - `at`: a date and time, e.g. `2025-10-17T14:30`. Without a UTC offset it's
-    a clock time in the term's `timezone`; with one (`Z`, `+09:00`) it's
-    converted there. A date with no time means midnight.
-  - `day_of_week` (0 = Monday) and `time`, together: that time every week.
-  - Neither: right now.
+## Docs
 
-  Searches always use the local clock time in the term's timezone, so daylight
-  saving time doesn't shift results. Every search is to the minute: seconds
-  are ignored, so `10:00:30` searches `10:00`. The response's `date`,
-  `day_of_week` and `time` are what was searched (`date` is `null` for a weekly
-  search).
-- A date outside the term's start and end dates returns no rooms, whether it
-  comes from `at` or is today's date in a "now" search. Past dates within the
-  term work.
-- The schedule doesn't know about academic holidays or breaks: a date during
-  one shows that weekday's normal classes.
-- Availability only covers 07:00–22:00; searches outside it return no rooms.
-- `minimum_minutes` defaults to 60 (1–1440). An unknown term is a 404.
-- Filters, all optional and all applied together:
-  - `building_id`
-  - `building_code`: exact match, ignoring case
-  - `building`: part of the building name, ignoring case
-  - `room`: exact room number, ignoring case
-
-  A filter that matches nothing returns `total: 0`, not an error.
-- Results are sorted by building name, then room number. `limit` (default
-  50, at most 200) and `offset` select a page; `total` counts every match.
-- `near_latitude` and `near_longitude`, together, sort by distance from that
-  point instead: nearest building first, buildings with no coordinates last,
-  and each building's rooms kept together. Each result's `distance_meters` is
-  the building's distance, rounded to the metre, or `null` without a point or
-  coordinates. Distances use a flat-earth approximation, within 1% across a
-  campus. Giving only one of the two is a 422.
-
-Errors are `{"detail": ...}`. An unknown term is a 404 with a message. Any
-invalid request is a 422 with a list of problems, each with a `loc` naming the
-parameter at fault:
-
-```json
-{"detail": [{"type": "value_error", "loc": ["query", "time"],
-             "msg": "time is required with day_of_week", "input": null}]}
-```
-
-`/docs` is the full reference: every parameter, response field, example, and
-error.
-
-## Summarising availability by building
-
-`GET /availability/buildings` takes the same search as `/availability`, except
-`limit` and `offset`, and returns one row per building with a room free: how
-many rooms are free and the longest any of them stays free. It's what a map
-needs for per-building counts, without paging through every room.
-
-```bash
-# Right now, nearest to a point first:
-curl 'http://localhost:8000/availability/buildings?term_id=1&near_latitude=37.8736&near_longitude=-122.2577'
-```
-
-```json
-{"date": "2025-10-17", "day_of_week": 4, "time": "14:30",
- "results": [{"building_id": 2, "building_code": "DWINELLE",
-              "building_name": "Dwinelle", "free_rooms": 6,
-              "longest_free_until": "22:00", "longest_free_minutes": 450,
-              "distance_meters": null}]}
-```
-
-- Every building is counted, not one page's worth. A building's `free_rooms`
-  is the `total` `/availability` reports for the same search with that
-  `building_id`.
-- `longest_free_until` is the latest `available_until` among those rooms, and
-  `longest_free_minutes` the minutes from the time searched until then.
-- Buildings with no matching room are left out; `/buildings` lists them all.
-- Sorting, `distance_meters`, the search moment, and errors work as for
-  `/availability`: by name, or nearest first with `near_latitude` and
-  `near_longitude`.
-
-## Listing buildings
-
-`GET /buildings` returns every building `/availability` searches: buildings
-inside the coverage area with at least one room in use. It takes no parameters
-and isn't paged.
-
-```bash
-curl 'http://localhost:8000/buildings'
-```
-
-```json
-{"results": [{"building_id": 2, "building_code": "DWINELLE",
-              "building_name": "Dwinelle",
-              "latitude": 37.8705, "longitude": -122.2606}]}
-```
-
-- Buildings are sorted by name. `latitude` and `longitude` are `null` when
-  unknown.
-- The fields match `/availability`'s, so a building's `building_id` or
-  `building_code` works as the `/availability` filter of the same name.
-- A listed building can still have no free room at a given time.
-
-## Building locations
-
-Berkeley's section pages don't give building coordinates, so they're kept by
-hand in [`data/building_locations.csv`](data/building_locations.csv)
-(`name,latitude,longitude`) and applied to the database with:
-
-```bash
-python -m ingestion.cli buildings set-locations            # the repo's CSV
-python -m ingestion.cli buildings set-locations --file other.csv
-```
-
-- Names are matched the way imports key buildings, ignoring case and
-  punctuation, so use the building name as it appears in the class schedule's
-  locations (`Dwinelle`, `Valley Life Sciences`).
-- It's safe to re-run, and imports never change coordinates. Run it again
-  after an import adds buildings: it lists covered buildings that still have
-  no coordinates (they sort last by distance), and CSV names that matched no
-  building.
-- An invalid CSV changes nothing and exits 2, naming the line at fault.
-- Coordinates come from [OpenStreetMap](https://www.openstreetmap.org/)
-  (© OpenStreetMap contributors, ODbL), at each building's centroid, to 5
-  decimal places (about a metre). Barrows, Kroeber and LeConte were renamed,
-  and their names in the schedule aren't known yet, and Genetics & Plant
-  Biology had no OpenStreetMap match, so they're left out until a real import
-  shows how the schedule names them.
-
-## Running tests and lint locally
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-docker compose up db -d   # the persistence tests need a real Postgres
-
-pytest
-ruff check .
-ruff format .           # or `ruff format --check .` to check without changing files
-```
-
-Tests never touch your dev database: they create and drop a separate
-`<database>_test` database on the same server. If Postgres isn't reachable,
-the database-backed tests are skipped; set `REQUIRE_TEST_DB=1` to make them
-fail instead (CI does this).
-
-Ruff and pytest are configured in `pyproject.toml` (88-character lines). The
-one-off repo-wide format commit is listed in `.git-blame-ignore-revs`; run
-`git config blame.ignoreRevsFile .git-blame-ignore-revs` to skip it in local
-`git blame`.
-
-## Continuous integration
-
-`.github/workflows/ci.yml` runs on every push and on pull requests to `main`:
-
-- **lint** — `ruff check .` and `ruff format --check .`
-- **test** — against a `postgres:16` service: exactly one Alembic head,
-  `alembic upgrade head` from an empty database, `alembic check` (no drift
-  between models and migrations), `alembic downgrade base` followed by
-  `alembic upgrade head`, then `pytest` with `REQUIRE_TEST_DB=1`
-
-## Environment variables
-
-See `.env.example` for the full list, including `DATABASE_URL`, `APP_ENV`,
-`ALLOWED_ORIGINS`, and scraper rate-limit/timeout settings.
-
-`DATABASE_URL` may also use the `postgres://` scheme, as Heroku sets it; it's
-read as `postgresql+psycopg2://`. Connections to the database time out after
-5 seconds.
-
-The Docker image's server listens on `$PORT`, or on 8000 if `PORT` isn't set.
-
-## Deploying to Heroku
-
-The API runs on Heroku's container stack with Heroku Postgres. `heroku.yml`
-builds the `Dockerfile`, and its release phase runs `alembic upgrade head`
-before each new version starts; if a migration fails, the release is cancelled
-and the previous version keeps serving.
-
-One-time setup:
-
-```bash
-heroku create <app> --stack container
-heroku addons:create heroku-postgresql:essential-0 -a <app>   # sets DATABASE_URL
-heroku config:set APP_ENV=production \
-  ALLOWED_ORIGINS=https://getaroomberkeley.me -a <app>
-```
-
-Deploy by pushing `main` to the `heroku` remote:
-
-```bash
-git push heroku main
-```
-
-Check `https://<app>.herokuapp.com/ready` afterwards; it returns 503 if the
-database can't be reached.
-
-A new database is empty, so the API returns no results until a term is
-imported. Run the import from your own machine against the Heroku database
-(see "Importing a term" for `term create`'s arguments; a full term takes about
-8-12 hours). Imports leave building coordinates empty, so set them afterwards or
-the map shows no buildings (see "Building locations"):
-
-```bash
-export DATABASE_URL=$(heroku config:get DATABASE_URL -a <app>)
-python -m ingestion.cli term create --name "Fall 2026" ...
-caffeinate -is python -m ingestion.cli import run "Fall 2026"
-python -m ingestion.cli buildings set-locations
-```
+- [Importing a term](docs/importing.md): running and checking an import, exit
+  codes, rejection reasons and known limitations.
+- [API reference](docs/api.md): the three endpoints, their parameters and
+  responses.
+- [Building locations](docs/building-locations.md): where coordinates come from
+  and how to update them.
+- [Development](docs/development.md): local setup, migrations, tests, lint, CI
+  and environment variables.
+- [Deploying to Heroku](docs/deployment.md): setting up and deploying the
+  production API, and importing into it.
