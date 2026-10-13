@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     scraper_rate_limit_seconds: float = 1.0
     scraper_timeout_seconds: float = 30.0
-    scraper_user_agent: str = "GetARoomBot/0.1 (+https://github.com/get-a-room-berkeley/get-a-room-api; polite academic-schedule scraper)"
+    scraper_user_agent: str = "GetARoomBot/0.1 (+https://github.com/lewisyang3/get-a-room; polite academic-schedule scraper)"
 
     @field_validator("database_url")
     @classmethod

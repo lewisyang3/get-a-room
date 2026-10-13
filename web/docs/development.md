@@ -7,19 +7,13 @@
 
 ## Running the whole stack with Docker Compose
 
-This repo's `docker-compose.yml` pulls in the API's Compose file from a sibling
-checkout, so both repos must sit side by side:
-
-```
-get-a-room/
-├── get-a-room-api/
-└── get-a-room-web/
-```
+This folder's `docker-compose.yml` pulls in the API's Compose file from
+`../api`. From `web/`:
 
 ```bash
-cp ../get-a-room-api/.env.example ../get-a-room-api/.env   # once
+cp ../api/.env.example ../api/.env   # once
 docker compose up --build
-docker compose exec api alembic upgrade head               # once per new database
+docker compose exec api alembic upgrade head   # once per new database
 ```
 
 This starts PostgreSQL, the API on `http://localhost:8000` and the web app on
@@ -27,10 +21,10 @@ This starts PostgreSQL, the API on `http://localhost:8000` and the web app on
 browser.
 
 Compose names this stack after this directory, so its database volume is
-separate from the one `docker compose up` creates in `get-a-room-api/`. Import
+separate from the one `docker compose up` creates in `api/`. Import
 a term into this stack with the API's CLI through the `api` service, e.g.
 `docker compose exec api python -m ingestion.cli term list` (see the API's
-[Importing a term](https://github.com/get-a-room-berkeley/get-a-room-api/blob/main/docs/importing.md) for the full import steps).
+[Importing a term](../../api/docs/importing.md) for the full import steps).
 
 ## Running the app directly
 
@@ -53,7 +47,7 @@ app from another origin, add it to the API's `ALLOWED_ORIGINS`.
 | `VITE_TERM_ID`      | none                    | The term to search, as its `term_id`. Search is disabled until it's set.              |
 | `VITE_MAPBOX_TOKEN` | none                    | A Mapbox public token (`pk.…`) for the campus map. Search is disabled until it's set. |
 
-Find a term's id with `python -m ingestion.cli term list` in `get-a-room-api`,
+Find a term's id with `python -m ingestion.cli term list` in `api/`,
 or `docker compose exec api python -m ingestion.cli term list` in the Compose
 stack.
 
@@ -83,7 +77,8 @@ or rebuild after changing one. For local overrides, copy `.env.example` to
 | `npm test`             | Run the tests once with Vitest.                  |
 | `npm run test:watch`   | Run the tests in watch mode.                     |
 
-CI (`.github/workflows/ci.yml`) runs lint, the format check, the type check,
-the tests and the build on every push and on pull requests to `main`. A push to
+CI (`.github/workflows/web.yml`, at the repo root) runs lint, the format
+check, the type check, the tests and the build on pushes and on pull requests
+to `main` that change `web/`. A push to
 `main` that passes them also deploys the site (see
 [Deployment](deployment.md)).

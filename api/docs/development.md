@@ -58,13 +58,15 @@ the database-backed tests are skipped; set `REQUIRE_TEST_DB=1` to make them
 fail instead (CI does this).
 
 Ruff and pytest are configured in `pyproject.toml` (88-character lines). The
-one-off repo-wide format commit is listed in `.git-blame-ignore-revs`; run
-`git config blame.ignoreRevsFile .git-blame-ignore-revs` to skip it in local
-`git blame`.
+one-off repo-wide format commit is listed in the repo root's
+`.git-blame-ignore-revs`; run
+`git config blame.ignoreRevsFile .git-blame-ignore-revs` from the root to skip
+it in local `git blame`.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push and on pull requests to `main`:
+`.github/workflows/api.yml`, at the repo root, runs on pushes and on pull
+requests to `main` that change `api/`:
 
 - **lint** — `ruff check .` and `ruff format --check .`
 - **test** — against a `postgres:16` service: exactly one Alembic head,

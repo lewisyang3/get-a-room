@@ -1,7 +1,7 @@
 # Deploying to Heroku
 
-The API runs on Heroku's container stack with Heroku Postgres. `heroku.yml`
-builds the `Dockerfile`, and its release phase runs `alembic upgrade head`
+The API runs on Heroku's container stack with Heroku Postgres. `heroku.yml`,
+at the repo root, builds `api/Dockerfile` (with `api/` as the build context), and its release phase runs `alembic upgrade head`
 before each new version starts; if a migration fails, the release is cancelled
 and the previous version keeps serving.
 
@@ -14,7 +14,7 @@ heroku config:set APP_ENV=production \
   ALLOWED_ORIGINS=https://getaroomberkeley.me -a <app>
 ```
 
-Deploy by pushing `main` to the `heroku` remote:
+Deploy by pushing `main` to the `heroku` remote, from anywhere in the repo:
 
 ```bash
 git push heroku main

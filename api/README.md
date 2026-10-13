@@ -16,10 +16,10 @@ Every class's room and meeting times are published in Berkeley's class
 schedule. If a room has no class scheduled now, it's free until its next one.
 
 ```
-classes.berkeley.edu ──import──▶ Postgres ◀── this API ◀── get-a-room-web ◀── students
+classes.berkeley.edu ──import──▶ Postgres ◀── this API ◀── web app ◀── students
 ```
 
-This repo does three things:
+This folder does three things:
 
 1. **Imports a term.** An operator runs the import by hand once per term. It
    scrapes every section in the term from classes.berkeley.edu and keeps those
@@ -33,19 +33,19 @@ This repo does three things:
      the map.
    - `/buildings`: every building, with its location.
 
-[get-a-room-web](https://github.com/get-a-room-berkeley/get-a-room-web) is the
+The [web app](../web) is the
 search page and campus map that students use; it calls these endpoints. The API
 runs on Heroku with Heroku Postgres, and the site on GitHub Pages.
 
 Availability is derived from **scheduled** course data — this does not guarantee a
 room is unlocked, permitted for student use, or actually unoccupied. The web
 README's
-[What it can and can't tell you](https://github.com/get-a-room-berkeley/get-a-room-web#what-it-can-and-cant-tell-you)
+[What it can and can't tell you](../web/README.md#what-it-can-and-cant-tell-you)
 has the full list.
 
 ## Quick start
 
-Prerequisites: Docker and Docker Compose.
+Prerequisites: Docker and Docker Compose. From this folder:
 
 ```bash
 cp .env.example .env

@@ -21,14 +21,14 @@ free, and until when?" for any time.
 classes.berkeley.edu ──import──▶ Postgres ◀── API ◀── this site ◀── students
 ```
 
-It's split across two repos:
+It's split into two folders:
 
-- **[get-a-room-api](https://github.com/get-a-room-berkeley/get-a-room-api)**
+- **[api/](../api)**
   imports a term from the class schedule, stores when each room is booked,
   and answers availability questions: free rooms at a time (`/availability`),
   counts per building (`/availability/buildings`) and building locations
   (`/buildings`). It runs on Heroku with Postgres.
-- **get-a-room-web** (this repo) is the search page. Pick a time and how long
+- **web/** (this folder) is the search page. Pick a time and how long
   you need a room, and it lists the free rooms grouped by building, with how
   long each stays free, next to a campus map. It's a React + TypeScript app
   built with Vite and served as a static site from GitHub Pages.
@@ -52,13 +52,12 @@ line; the detail is here.
 
 ## Quick start
 
-Check out both repos side by side (`get-a-room/get-a-room-api` and
-`get-a-room/get-a-room-web`), then from this repo:
+From this folder:
 
 ```bash
-cp ../get-a-room-api/.env.example ../get-a-room-api/.env   # once
+cp ../api/.env.example ../api/.env   # once
 docker compose up --build
-docker compose exec api alembic upgrade head               # once per new database
+docker compose exec api alembic upgrade head   # once per new database
 ```
 
 The site is then at `http://localhost:3000` and the API at
@@ -75,6 +74,6 @@ The site is then at `http://localhost:3000` and the API at
 - [Campus map](docs/campus-map.md): what the map shows and how it behaves.
 - [Accessibility](docs/accessibility.md): what the page supports and how it's
   checked.
-- [Design](https://github.com/get-a-room-berkeley/get-a-room-api/blob/main/docs/design.md)
-  (in the API repo): how the whole system works and why, its limitations and
+- [Design](../api/docs/design.md)
+  (in `api/`): how the whole system works and why, its limitations and
   open questions.

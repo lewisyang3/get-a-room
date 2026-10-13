@@ -51,7 +51,7 @@ flowchart LR
     importer["Importer CLI<br/>ingestion/, run by hand"]
     db[("Postgres<br/>Heroku Postgres")]
     api["FastAPI<br/>app/, on Heroku"]
-    web["React app<br/>get-a-room-web,<br/>on GitHub Pages"]
+    web["React app<br/>web/,<br/>on GitHub Pages"]
     mapbox["Mapbox<br/>(map tiles)"]
     students(["Students"])
 
@@ -355,7 +355,7 @@ the schedule should look like.
 ## Limitations
 
 What a student can rely on is set out in the web README's
-[What it can and can't tell you](https://github.com/get-a-room-berkeley/get-a-room-web#what-it-can-and-cant-tell-you).
+[What it can and can't tell you](../../web/README.md#what-it-can-and-cant-tell-you).
 In short:
 
 - **Scheduled, not live.** A room with no class may already be in use.
