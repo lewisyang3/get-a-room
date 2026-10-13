@@ -75,3 +75,6 @@ The site is then at `http://localhost:3000` and the API at
 - [Campus map](docs/campus-map.md): what the map shows and how it behaves.
 - [Accessibility](docs/accessibility.md): what the page supports and how it's
   checked.
+- [Design](https://github.com/get-a-room-berkeley/get-a-room-api/blob/main/docs/design.md)
+  (in the API repo): how the whole system works and why, its limitations and
+  open questions.
