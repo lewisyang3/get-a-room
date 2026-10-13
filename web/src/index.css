@@ -1,0 +1,127 @@
+/* Design tokens. Colors meet WCAG AA contrast for text on --bg and --surface
+   in every theme. */
+:root {
+  --text: #1d1d1f;
+  --text-secondary: #57575e;
+  --bg: #ffffff;
+  --surface: #f5f5f7;
+  --border: #d2d2d7;
+  --accent: #0b5cad;
+  --on-accent: #ffffff;
+  /* A segmented control's track, and its selected segment. */
+  --fill: rgb(118 118 128 / 0.12);
+  --thumb: #ffffff;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  --radius: 1rem;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #f5f5f7;
+    --text-secondary: #a8a8b0;
+    --bg: #111113;
+    --surface: #1c1c1f;
+    --border: #38383d;
+    --accent: #6cb4ff;
+    --on-accent: #111113;
+    --fill: rgb(118 118 128 / 0.24);
+    --thumb: #48484d;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --text: #000000;
+    --text-secondary: #2b2b2f;
+    --surface: #ffffff;
+    --border: #000000;
+  }
+}
+
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root {
+    --text: #ffffff;
+    --text-secondary: #e0e0e4;
+    --surface: #000000;
+    --border: #ffffff;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* 100% keeps the user's chosen text size; everything else scales in rem. */
+html {
+  font-size: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  font-optical-sizing: auto;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tracking and leading tighten as type grows. */
+h1,
+h2,
+h3 {
+  margin: 0;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: clamp(2.25rem, 6vw, 3.5rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+}
+
+h2 {
+  font-size: 1.375rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+p,
+ul {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

@@ -1,0 +1,125 @@
+.map {
+  width: 100%;
+  height: 100%;
+  min-height: 20rem;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+/* A count pill per building. Mapbox positions the button (.mapboxgl-marker
+   sets position: absolute and a transform), so this sets neither: a
+   `position` here would win over Mapbox's and push each marker off its
+   building. The pill inside it does the press and selection scaling, since
+   `scale` on the button would also scale Mapbox's offset and slide the
+   marker away from its building. */
+.marker {
+  display: flex;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  /* Keeps Mapbox's own fade, which this would otherwise replace. */
+  transition: opacity 0.2s;
+}
+
+.pill {
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: scale 100ms ease-out;
+}
+
+/* A 44px hit area around the smaller pill. */
+.marker::after {
+  content: '';
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 2.75rem;
+  height: 2.75rem;
+  translate: -50% -50%;
+}
+
+.marker:active .pill {
+  scale: 0.94;
+}
+
+.marker:focus-visible {
+  outline: none;
+}
+
+.marker:focus-visible .pill {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.free .pill {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* No room free: still there to choose, but quiet. */
+.none .pill {
+  color: var(--text-secondary);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+/* Counts not known yet: a small dot, so it can't read as "none free". */
+.unknown .pill {
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0;
+}
+
+.selected {
+  z-index: 1;
+}
+
+.selected .pill {
+  scale: 1.15;
+  box-shadow:
+    0 0 0 3px var(--bg),
+    0 0 0 5px var(--text);
+}
+
+.selected:active .pill {
+  scale: 1.08;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No movement. */
+  .pill {
+    transition: none;
+  }
+
+  .marker:active .pill {
+    scale: none;
+  }
+
+  .selected .pill,
+  .selected:active .pill {
+    scale: 1.15;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .pill {
+    border-width: 2px;
+  }
+}

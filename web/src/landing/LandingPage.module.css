@@ -1,0 +1,74 @@
+/* Single readable column. The gutter never drops below 1rem and clears the
+   notch and home indicator on phones. */
+.page {
+  /* At least the window's height, so the footer sits at the bottom. */
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding-left: max(var(--space-4), env(safe-area-inset-left));
+  padding-right: max(var(--space-4), env(safe-area-inset-right));
+  padding-bottom: max(var(--space-8), env(safe-area-inset-bottom));
+}
+
+/* With the map beside the results, the page becomes the window's left
+   column and the map fills the rest (see AvailabilitySearch.module.css). */
+.page:has([data-layout='side-by-side']) {
+  --list-width: min(44rem, 50vw);
+  width: var(--list-width);
+  max-width: none;
+  margin: 0;
+  padding-left: max(var(--space-8), env(safe-area-inset-left));
+  padding-right: var(--space-8);
+}
+
+.hero,
+.note {
+  max-width: 40rem;
+}
+
+.header {
+  padding-top: max(var(--space-6), env(safe-area-inset-top));
+}
+
+.wordmark {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-top: var(--space-12);
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.lede {
+  font-size: 1.25rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.footer {
+  padding-top: var(--space-12);
+}
+
+.note {
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.note a {
+  color: var(--accent);
+  text-underline-offset: 0.15em;
+}
