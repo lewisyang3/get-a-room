@@ -1,0 +1,9 @@
+# Heroku reads this file from the repo root. The API lives in api/, which is
+# also the Docker build context (the Dockerfile's folder).
+build:
+  docker:
+    web: api/Dockerfile
+release:
+  image: web
+  command:
+    - alembic upgrade head

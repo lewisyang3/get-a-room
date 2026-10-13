@@ -2,7 +2,7 @@
 # automatically; locally: git config blame.ignoreRevsFile .git-blame-ignore-revs).
 
 # Apply ruff format across the repo
-ad341d92cb995ffb04644c7cffef9b2b406c7c83
+de75df3937f667e943adbc5414e6328dc3beb2e5
 
 # Apply ruff format to recompute.py
-c42f583c4bc31a8247c7b2dcb34407aa358f321f
+072a0f093bf70beae0ab430e3276537beb46cbc5

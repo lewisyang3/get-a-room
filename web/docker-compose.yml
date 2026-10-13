@@ -1,7 +1,7 @@
-# Runs the whole stack: the API and its database (from the sibling
-# get-a-room-api checkout) plus the web app.
+# Runs the whole stack: the API and its database (from ../api) plus the web
+# app.
 include:
-  - ../get-a-room-api/docker-compose.yml
+  - ../api/docker-compose.yml
 
 services:
   web:
