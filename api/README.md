@@ -89,3 +89,5 @@ curl 'http://localhost:8000/availability?term_id=1'
   and environment variables.
 - [Deploying to Heroku](docs/deployment.md): setting up and deploying the
   production API, and importing into it.
+- [Design](docs/design.md): how the pipeline, schema and interval logic work and
+  why, the Fall 2026 data-quality report, limitations and open questions.
