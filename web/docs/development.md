@@ -20,8 +20,8 @@ This starts PostgreSQL, the API on `http://localhost:8000` and the web app on
 `http://localhost:3000`. The source is bind-mounted, so edits reload in the
 browser.
 
-Compose names this stack after this directory, so its database volume is
-separate from the one `docker compose up` creates in `api/`. Import
+This stack is named `get-a-room-web`, so its database volume is separate from
+the one `docker compose up` creates in `api/` (named `get-a-room-api`). Import
 a term into this stack with the API's CLI through the `api` service, e.g.
 `docker compose exec api python -m ingestion.cli term list` (see the API's
 [Importing a term](../../api/docs/importing.md) for the full import steps).

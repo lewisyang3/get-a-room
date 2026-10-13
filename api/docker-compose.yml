@@ -1,3 +1,7 @@
+# Named, not taken from the folder, so the stack and its database volume keep
+# the names they had when this was the get-a-room-api repo.
+name: get-a-room-api
+
 services:
   db:
     image: postgres:16

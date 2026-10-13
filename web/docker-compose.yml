@@ -1,5 +1,8 @@
 # Runs the whole stack: the API and its database (from ../api) plus the web
-# app.
+# app. Named, not taken from the folder, so the stack and its database volume
+# keep the names they had when this was the get-a-room-web repo.
+name: get-a-room-web
+
 include:
   - ../api/docker-compose.yml
 
