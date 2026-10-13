@@ -35,8 +35,8 @@ one does is under [Configuration](development.md#configuration).
 | `VITE_MAPBOX_TOKEN` | A public Mapbox token (`pk.…`)                      |
 
 Find the production term's id by running `python -m ingestion.cli term list`
-in `get-a-room-api` with `DATABASE_URL` set to the Heroku database (see the
-API's README).
+in `get-a-room-api` with `DATABASE_URL` set to the Heroku database (see the API's
+[Deploying to Heroku](https://github.com/get-a-room-berkeley/get-a-room-api/blob/main/docs/deployment.md)).
 
 The values are built into the page, so changing one has no effect until the
 site is deployed again.
@@ -57,6 +57,5 @@ gh run rerun <id>
 Browsers only accept the API's responses if the API lists the site's address
 in `ALLOWED_ORIGINS`. Production sets it to `https://getaroomberkeley.me`
 (`www` redirects, so it doesn't need its own entry). Setting up and deploying
-the API is covered in the API README's
-[Deploying to Heroku](https://github.com/get-a-room-berkeley/get-a-room-api#deploying-to-heroku)
-section.
+the API is covered in the API's
+[Deploying to Heroku](https://github.com/get-a-room-berkeley/get-a-room-api/blob/main/docs/deployment.md).

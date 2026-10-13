@@ -30,7 +30,7 @@ Compose names this stack after this directory, so its database volume is
 separate from the one `docker compose up` creates in `get-a-room-api/`. Import
 a term into this stack with the API's CLI through the `api` service, e.g.
 `docker compose exec api python -m ingestion.cli term list` (see the API's
-README for the full import steps).
+[Importing a term](https://github.com/get-a-room-berkeley/get-a-room-api/blob/main/docs/importing.md) for the full import steps).
 
 ## Running the app directly
 
