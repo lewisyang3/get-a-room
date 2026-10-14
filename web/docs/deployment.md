@@ -52,6 +52,17 @@ run the Web workflow by hand. In GitHub, open it under Actions and choose
 gh workflow run web.yml --ref main
 ```
 
+## Visitor counts
+
+[GoatCounter](https://www.goatcounter.com) counts visitors, without cookies,
+through the script tag in `index.html`. The dashboard is at
+**https://lewisyang.goatcounter.com**. The site is a single page, so each visit
+is one page view.
+
+- Ad blockers stop the script, so the count runs low, probably by 10–30%.
+- Visits from `localhost` aren't counted, so local and Docker runs don't
+  inflate it.
+
 ## The API side
 
 Browsers only accept the API's responses if the API lists the site's address
