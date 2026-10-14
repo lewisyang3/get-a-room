@@ -24,6 +24,17 @@ type LocatedBuilding = Building & { latitude: number; longitude: number }
 // than night: night lights buildings so dimly that their 3D shapes barely show.
 const LIGHT_PRESET = 'dusk'
 
+// Where the map starts: central campus, from Doe Library, close enough that
+// the Standard style's 3D buildings show. Tilted and turned, so buildings and
+// trees show their height. A fixed view rather than a fit around every
+// building, which leaves campus too small to see them.
+const START_VIEW = {
+  center: [-122.2594, 37.8722] as [number, number],
+  zoom: 15.55,
+  pitch: 60,
+  bearing: -20,
+}
+
 function isLocated(building: Building): building is LocatedBuilding {
   return building.latitude !== null && building.longitude !== null
 }
@@ -109,7 +120,7 @@ function CampusMap({
   })
   const unavailable = useEffectEvent(() => onUnavailable())
 
-  // Creates the map, framing every building. The token and buildings are
+  // Creates the map over central campus. The token and buildings are
   // set once per visit, so in practice this runs once; markers, counts, and
   // selection update the map in place.
   useEffect(() => {
@@ -119,8 +130,6 @@ function CampusMap({
       unavailable()
       return
     }
-    const bounds = new mapboxgl.LngLatBounds()
-    for (const building of located) bounds.extend(lngLat(building))
     let map: mapboxgl.Map
     try {
       map = new mapboxgl.Map({
@@ -128,10 +137,7 @@ function CampusMap({
         accessToken: token,
         style: 'mapbox://styles/mapbox/standard',
         config: { basemap: { lightPreset: LIGHT_PRESET } },
-        bounds,
-        // Tilted and turned, so the Standard style's 3D buildings and trees
-        // show their height. The fit sets the camera, so the tilt goes here.
-        fitBoundsOptions: { padding: 40, maxZoom: 17, pitch: 60, bearing: -20 },
+        ...START_VIEW,
       })
     } catch {
       unavailable()

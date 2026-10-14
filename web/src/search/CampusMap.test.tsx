@@ -60,16 +60,15 @@ afterEach(() => {
 })
 
 describe('CampusMap', () => {
-  it('frames every building with a location, using the token', () => {
+  it('starts over central campus, using the token', () => {
     renderMap()
 
     const { options } = mapbox.map
     expect(options.accessToken).toBe('pk.test')
-    expect(options.bounds?.points).toContainEqual([-122.2607, 37.8707])
-    expect(options.bounds?.points).toContainEqual([-122.2577, 37.8736])
+    expect(options.center).toEqual([-122.2594, 37.8722])
     expect(options.config?.basemap?.lightPreset).toBe('dusk')
     // Tilted, so buildings show in 3D.
-    expect(options.fitBoundsOptions).toMatchObject({ pitch: 60 })
+    expect(options).toMatchObject({ pitch: 60 })
   })
 
   it('shows each located building with how many rooms it has free', () => {

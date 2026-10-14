@@ -33,7 +33,6 @@ export const mapbox = {
 type MapOptions = {
   container: HTMLElement
   config?: { basemap?: { lightPreset?: string } }
-  bounds?: FakeLngLatBounds
   [key: string]: unknown
 }
 
@@ -100,20 +99,10 @@ class FakeMarker {
   }
 }
 
-class FakeLngLatBounds {
-  readonly points: LngLat[] = []
-
-  extend(point: LngLat) {
-    this.points.push(point)
-    return this
-  }
-}
-
 export const module = {
   default: {
     Map: FakeMap,
     Marker: FakeMarker,
-    LngLatBounds: FakeLngLatBounds,
     supported: () => mapbox.supported,
   },
 }
