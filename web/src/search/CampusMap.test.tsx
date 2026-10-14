@@ -67,7 +67,7 @@ describe('CampusMap', () => {
     expect(options.accessToken).toBe('pk.test')
     expect(options.bounds?.points).toContainEqual([-122.2607, 37.8707])
     expect(options.bounds?.points).toContainEqual([-122.2577, 37.8736])
-    expect(options.config?.basemap?.lightPreset).toBe('day')
+    expect(options.config?.basemap?.lightPreset).toBe('dusk')
     // Tilted, so buildings show in 3D.
     expect(options.fitBoundsOptions).toMatchObject({ pitch: 60 })
   })

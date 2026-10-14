@@ -20,14 +20,9 @@ type Props = {
 
 type LocatedBuilding = Building & { latitude: number; longitude: number }
 
-const DARK_SCHEME = '(prefers-color-scheme: dark)'
-
-// The Standard style's lighting, following the page's light or dark theme.
-// Dusk rather than night in dark mode: night lights buildings so dimly that
-// their 3D shapes barely show.
-function lightPreset(): 'day' | 'dusk' {
-  return window.matchMedia?.(DARK_SCHEME).matches ? 'dusk' : 'day'
-}
+// The Standard style's lighting, matching the page's dark theme. Dusk rather
+// than night: night lights buildings so dimly that their 3D shapes barely show.
+const LIGHT_PRESET = 'dusk'
 
 function isLocated(building: Building): building is LocatedBuilding {
   return building.latitude !== null && building.longitude !== null
@@ -132,7 +127,7 @@ function CampusMap({
         container,
         accessToken: token,
         style: 'mapbox://styles/mapbox/standard',
-        config: { basemap: { lightPreset: lightPreset() } },
+        config: { basemap: { lightPreset: LIGHT_PRESET } },
         bounds,
         // Tilted and turned, so the Standard style's 3D buildings and trees
         // show their height. The fit sets the camera, so the tilt goes here.
@@ -167,14 +162,7 @@ function CampusMap({
         .addTo(map)
     })
 
-    // Follows the page's theme when it changes.
-    const scheme = window.matchMedia?.(DARK_SCHEME)
-    const followScheme = () =>
-      map.setConfigProperty('basemap', 'lightPreset', lightPreset())
-    scheme?.addEventListener('change', followScheme)
-
     return () => {
-      scheme?.removeEventListener('change', followScheme)
       placed.forEach((marker) => marker.remove())
       mapRef.current = null
       map.remove()
