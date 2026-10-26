@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Building } from '../api/buildings'
@@ -131,13 +131,23 @@ describe('CampusMap', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('moves focus to the map when the focused marker is left off', () => {
+  it('keeps a focused marker until focus leaves it', () => {
     const { update } = renderMap({ selectedBuildingId: 2 })
-    screen.getByRole('button', { name: /^Evans/ }).focus()
+    const evans = screen.getByRole('button', { name: /^Evans/ })
+    act(() => evans.focus())
 
     update({ selectedBuildingId: null })
 
-    expect(mapbox.map.getCanvas()).toHaveFocus()
+    expect(
+      screen.getByRole('button', { name: 'Evans: 0 rooms free' }),
+    ).toHaveAttribute('aria-pressed', 'false')
+    expect(evans).toHaveFocus()
+
+    act(() => evans.blur())
+
+    expect(
+      screen.queryByRole('button', { name: /^Evans/ }),
+    ).not.toBeInTheDocument()
   })
 
   it('selects a building, and selecting it again goes back to all', async () => {

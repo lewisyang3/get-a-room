@@ -110,6 +110,12 @@ function CampusMap({
           const pill = document.createElement('span')
           pill.classList.add(styles.pill)
           button.append(pill)
+          // A marker kept only because it had focus goes once focus leaves.
+          button.addEventListener('focusout', () => {
+            button.hidden =
+              button.classList.contains(styles.none) &&
+              !button.classList.contains(styles.selected)
+          })
           return [building.building_id, button] as const
         }),
       ),
@@ -182,14 +188,10 @@ function CampusMap({
       const element = markers.get(building.building_id)!
       const { text, label, kind } = markerContent(building, counts)
       const selected = building.building_id === selectedBuildingId
-      // No room free: left off the map, unless it's selected.
+      // No room free: left off the map, unless it's selected, or focused, e.g.
+      // just deselected with the keyboard. That one goes when focus leaves.
       const hidden = kind === 'none' && !selected
-      // Hiding the focused marker, e.g. on deselecting a building with none
-      // free, would drop focus to the page, so it moves to the map instead.
-      if (hidden && element.contains(document.activeElement)) {
-        mapRef.current?.getCanvas().focus()
-      }
-      element.hidden = hidden
+      element.hidden = hidden && !element.contains(document.activeElement)
       element.firstElementChild!.textContent = text
       element.setAttribute('aria-label', label)
       element.setAttribute('aria-pressed', String(selected))
