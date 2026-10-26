@@ -1,3 +1,4 @@
+import Supercluster, { type PointFeature } from 'supercluster'
 import type { Building } from '../api/buildings'
 import type { FreeRoomCounts } from './useBuildingAvailability'
 
@@ -5,30 +6,29 @@ export type LocatedBuilding = Building & { latitude: number; longitude: number }
 
 type LngLat = [number, number]
 
-/** A building as a point in the map's clustered source. GeoJSON's types
- * aren't installed, so this is the little of them the map uses. */
-type BuildingFeature = {
-  type: 'Feature'
-  geometry: { type: 'Point'; coordinates: LngLat }
-  properties: { building_id: number; free: number }
+// How close buildings group, in pixels: a little more than a pill's width,
+// so pills that would overlap merge instead.
+export const CLUSTER_RADIUS = 40
+
+// The last zoom at which buildings group; from 17 every building is shown
+// on its own.
+export const CLUSTER_MAX_ZOOM = 16
+
+type BuildingProperties = { building_id: number; free: number }
+type GroupProperties = { free: number }
+
+/** A building as a point to group. */
+type BuildingPoint = PointFeature<BuildingProperties>
+
+export type ClusterIndex = Supercluster<BuildingProperties, GroupProperties>
+
+export type Cluster = {
+  lngLat: LngLat
+  buildings: number
+  free: number
+  /** The zoom at which the group splits. */
+  expansionZoom: number
 }
-
-export type BuildingFeatures = {
-  type: 'FeatureCollection'
-  features: BuildingFeature[]
-}
-
-/** Sums each group's free rooms, so a group can show them. */
-export const CLUSTER_PROPERTIES = { free: ['+', ['get', 'free']] }
-
-/** A feature as `querySourceFeatures` returns it: a building, or a group
- * of them with Mapbox's cluster properties. */
-export type SourceFeature = {
-  geometry: { type: string; coordinates?: unknown }
-  properties: Record<string, unknown> | null
-}
-
-export type Cluster = { lngLat: LngLat; buildings: number; free: number }
 
 /** What's on screen: buildings shown on their own, and groups by id. */
 export type OnScreen = {
@@ -58,16 +58,16 @@ export function markerContent(building: Building, counts: FreeRoomCounts) {
 }
 
 /** The buildings that can be grouped: those with a room free, or all of
- * them before counts are known. The selected building is left out, so it's
- * always shown on its own, and buildings with none free so they don't
- * swell a group. */
-export function buildingFeatures(
+ * them before counts are known. Buildings with none free are left out so
+ * they don't swell a group, and so are `leftOut`, e.g. the selected one, so
+ * they're always shown on their own. */
+export function buildingPoints(
   located: LocatedBuilding[],
   counts: FreeRoomCounts,
-  selectedBuildingId: number | null,
-): BuildingFeatures {
-  const features = located.flatMap((building): BuildingFeature[] => {
-    if (building.building_id === selectedBuildingId) return []
+  leftOut: ReadonlySet<number>,
+): BuildingPoint[] {
+  return located.flatMap((building): BuildingPoint[] => {
+    if (leftOut.has(building.building_id)) return []
     const free =
       counts === 'unknown' ? 0 : (counts.get(building.building_id) ?? 0)
     if (counts !== 'unknown' && free === 0) return []
@@ -79,25 +79,40 @@ export function buildingFeatures(
       },
     ]
   })
-  return { type: 'FeatureCollection', features }
 }
 
-/** Sorts the source's features into buildings and groups. Mapbox returns a
- * feature once per tile it falls in, so repeats are dropped. */
-export function markersOnScreen(features: SourceFeature[]): OnScreen {
+/** Groups the points at every zoom, summing each group's free rooms. */
+export function clusterIndex(points: BuildingPoint[]): ClusterIndex {
+  return new Supercluster<BuildingProperties, GroupProperties>({
+    radius: CLUSTER_RADIUS,
+    maxZoom: CLUSTER_MAX_ZOOM,
+    map: ({ free }) => ({ free }),
+    reduce: (group, { free }) => {
+      group.free += free
+    },
+  }).load(points)
+}
+
+/** The buildings and groups in a box, `[west, south, east, north]`, at a
+ * zoom. */
+export function groupsOnScreen(
+  index: ClusterIndex,
+  bbox: [number, number, number, number],
+  zoom: number,
+): OnScreen {
   const onScreen: OnScreen = { buildingIds: new Set(), clusters: new Map() }
-  for (const { geometry, properties } of features) {
-    if (!properties) continue
-    if (properties.cluster) {
-      const id = Number(properties.cluster_id)
-      if (onScreen.clusters.has(id)) continue
+  for (const feature of index.getClusters(bbox, Math.floor(zoom))) {
+    const { properties } = feature
+    if ('cluster_id' in properties) {
+      const id = properties.cluster_id
       onScreen.clusters.set(id, {
-        lngLat: geometry.coordinates as LngLat,
-        buildings: Number(properties.point_count),
-        free: Number(properties.free),
+        lngLat: feature.geometry.coordinates as LngLat,
+        buildings: properties.point_count,
+        free: properties.free,
+        expansionZoom: index.getClusterExpansionZoom(id),
       })
     } else {
-      onScreen.buildingIds.add(Number(properties.building_id))
+      onScreen.buildingIds.add(properties.building_id)
     }
   }
   return onScreen
@@ -106,7 +121,10 @@ export function markersOnScreen(features: SourceFeature[]): OnScreen {
 /** What a group's marker shows: its buildings' total, and a name that says
  * what's grouped and what choosing it does. Before counts are known, it
  * shows no number, which would read as rooms. */
-export function clusterContent(cluster: Cluster, counts: FreeRoomCounts) {
+export function clusterContent(
+  cluster: Pick<Cluster, 'buildings' | 'free'>,
+  counts: FreeRoomCounts,
+) {
   const buildings = `${cluster.buildings} buildings`
   if (counts === 'unknown') {
     return { text: '', label: `${buildings}. Zoom in`, kind: 'unknown' }

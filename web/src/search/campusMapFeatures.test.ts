@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { clusterFeature, pointFeature } from '../test/mapbox'
 import {
-  buildingFeatures,
+  buildingPoints,
   clusterContent,
-  markersOnScreen,
+  clusterIndex,
+  groupsOnScreen,
   type LocatedBuilding,
 } from './campusMapFeatures'
 
@@ -21,20 +21,21 @@ const EVANS: LocatedBuilding = {
   latitude: 37.8736,
   longitude: -122.2577,
 }
+const BOTH = new Map([
+  [1, 6],
+  [2, 3],
+])
+const WORLD: [number, number, number, number] = [-180, -85, 180, 85]
 
-function ids(collection: ReturnType<typeof buildingFeatures>) {
-  return collection.features.map((f) => f.properties.building_id)
+function ids(points: ReturnType<typeof buildingPoints>) {
+  return points.map((p) => p.properties.building_id)
 }
 
-describe('buildingFeatures', () => {
+describe('buildingPoints', () => {
   it('groups only buildings with a room free, with their counts', () => {
-    const collection = buildingFeatures(
-      [DWINELLE, EVANS],
-      new Map([[1, 6]]),
-      null,
-    )
-
-    expect(collection.features).toEqual([
+    expect(
+      buildingPoints([DWINELLE, EVANS], new Map([[1, 6]]), new Set()),
+    ).toEqual([
       {
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [-122.2607, 37.8707] },
@@ -44,46 +45,46 @@ describe('buildingFeatures', () => {
   })
 
   it("groups every building when counts aren't known", () => {
-    expect(ids(buildingFeatures([DWINELLE, EVANS], 'unknown', null))).toEqual([
-      1, 2,
-    ])
+    expect(
+      ids(buildingPoints([DWINELLE, EVANS], 'unknown', new Set())),
+    ).toEqual([1, 2])
   })
 
-  it('leaves out the selected building', () => {
-    const counts = new Map([
-      [1, 6],
-      [2, 3],
+  it('leaves out the buildings asked to', () => {
+    expect(ids(buildingPoints([DWINELLE, EVANS], BOTH, new Set([2])))).toEqual([
+      1,
     ])
-
-    expect(ids(buildingFeatures([DWINELLE, EVANS], counts, 2))).toEqual([1])
   })
 })
 
-describe('markersOnScreen', () => {
-  it('sorts buildings from groups, once each', () => {
-    const group = clusterFeature({
-      id: 7,
-      lngLat: [-122.26, 37.87],
-      buildings: 3,
-      free: 9,
-    })
-    const onScreen = markersOnScreen([
-      pointFeature(DWINELLE, 6),
-      group,
-      // Repeated, as in a neighbouring tile.
-      pointFeature(DWINELLE, 6),
-      group,
-    ])
+describe('groupsOnScreen', () => {
+  const index = clusterIndex(buildingPoints([DWINELLE, EVANS], BOTH, new Set()))
 
-    expect([...onScreen.buildingIds]).toEqual([1])
-    expect([...onScreen.clusters]).toEqual([
-      [7, { lngLat: [-122.26, 37.87], buildings: 3, free: 9 }],
+  it('groups nearby buildings when zoomed out, summing their rooms', () => {
+    const { buildingIds, clusters } = groupsOnScreen(index, WORLD, 12.5)
+
+    expect(buildingIds.size).toBe(0)
+    expect([...clusters.values()]).toEqual([
+      {
+        lngLat: [expect.any(Number), expect.any(Number)],
+        buildings: 2,
+        free: 9,
+        expansionZoom: expect.any(Number),
+      },
     ])
+    expect([...clusters.values()][0].expansionZoom).toBeGreaterThan(12)
+  })
+
+  it('shows each building on its own when zoomed in', () => {
+    const { buildingIds, clusters } = groupsOnScreen(index, WORLD, 16)
+
+    expect([...buildingIds]).toEqual([1, 2])
+    expect(clusters.size).toBe(0)
   })
 })
 
 describe('clusterContent', () => {
-  const cluster = { lngLat: [0, 0] as [number, number], buildings: 5 }
+  const cluster = { buildings: 5 }
 
   it('shows the total free rooms', () => {
     expect(clusterContent({ ...cluster, free: 34 }, new Map())).toEqual({

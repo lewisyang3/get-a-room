@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Building } from '../api/buildings'
 import { expectNoAxeViolations } from '../test/axe'
-import { clusterFeature, mapbox, pointFeature } from '../test/mapbox'
+import { mapbox } from '../test/mapbox'
 import CampusMap from './CampusMap'
 import type { LocatedBuilding } from './campusMapFeatures'
 import type { FreeRoomCounts } from './useBuildingAvailability'
@@ -24,6 +24,14 @@ const EVANS: LocatedBuilding = {
   latitude: 37.8736,
   longitude: -122.2577,
 }
+// Near Dwinelle and Evans, to group with them.
+const DOE: LocatedBuilding = {
+  building_id: 4,
+  building_code: 'DOE',
+  building_name: 'Doe Library',
+  latitude: 37.8722,
+  longitude: -122.2594,
+}
 const NOWHERE: Building = {
   building_id: 3,
   building_code: 'HFA',
@@ -33,6 +41,7 @@ const NOWHERE: Building = {
 }
 
 function renderMap({
+  buildings = [DWINELLE, EVANS, NOWHERE] as Building[],
   counts = new Map([[1, 6]]) as FreeRoomCounts,
   selectedBuildingId = null as number | null,
   onSelect = vi.fn(),
@@ -40,7 +49,7 @@ function renderMap({
 } = {}) {
   const props = {
     token: 'pk.test',
-    buildings: [DWINELLE, EVANS, NOWHERE],
+    buildings,
     counts,
     selectedBuildingId,
     onSelect,
@@ -144,8 +153,8 @@ describe('CampusMap', () => {
     ).toHaveAttribute('aria-pressed', 'false')
     expect(evans).toHaveFocus()
 
-    // Switching apps fires focusout but leaves focus here, to come back to.
-    fireEvent.focusOut(evans)
+    // Switching apps fires blur but leaves focus here, to come back to.
+    fireEvent.blur(evans)
     expect(evans).toBeVisible()
 
     act(() => evans.blur())
@@ -195,55 +204,21 @@ describe('CampusMap', () => {
       [1, 6],
       [2, 3],
     ])
-    const GROUP = clusterFeature({ id: 7, buildings: 2, free: 9 })
 
-    /** Has Mapbox show these features, as it does after a move or reload. */
-    function show(features: ReturnType<typeof clusterFeature>[]) {
+    /** Zooms the map out until Dwinelle and Evans group, or back in. */
+    function zoomTo(zoom: number) {
       act(() => {
-        mapbox.map.onScreen = features
-        mapbox.map.emit('render')
+        mapbox.map.zoom = zoom
+        mapbox.map.emit('moveend')
       })
     }
 
-    it('gives Mapbox the buildings to group once the style loads', () => {
-      mapbox.styleLoaded = false
-      renderMap({ counts: BOTH })
-      expect(mapbox.map.addSource).not.toHaveBeenCalled()
+    const group = () => screen.getByRole('button', { name: /^2 buildings/ })
 
-      act(() => mapbox.map.emit('style.load'))
-
-      expect(mapbox.map.addSource).toHaveBeenCalledWith(
-        'buildings',
-        expect.objectContaining({
-          type: 'geojson',
-          cluster: true,
-          clusterMaxZoom: 16,
-          clusterProperties: { free: ['+', ['get', 'free']] },
-        }),
-      )
-      expect(mapbox.map.addLayer).toHaveBeenCalledWith(
-        expect.objectContaining({ source: 'buildings', type: 'circle' }),
-      )
-    })
-
-    it('leaves out buildings with none free, and the selected one', () => {
-      const { update } = renderMap({ counts: BOTH })
-      const source = mapbox.map.getSource('buildings')!
-      const grouped = () =>
-        source.data.features.map((f) => f.properties.building_id)
-      expect(grouped()).toEqual([1, 2])
-
-      update({ counts: new Map([[1, 6]]) })
-      expect(grouped()).toEqual([1])
-
-      update({ counts: BOTH, selectedBuildingId: 1 })
-      expect(grouped()).toEqual([2])
-    })
-
-    it('shows a group with its buildings’ total, in place of them', () => {
+    it('shows nearby buildings as one group with their total', () => {
       renderMap({ counts: BOTH })
 
-      show([GROUP])
+      zoomTo(12)
 
       expect(
         screen.getByRole('button', {
@@ -258,116 +233,130 @@ describe('CampusMap', () => {
       ).not.toBeInTheDocument()
     })
 
+    it('shows the buildings before the style loads', () => {
+      renderMap({ counts: BOTH })
+
+      // No 'style.load' or 'moveend' yet.
+      expect(
+        screen.getByRole('button', { name: /^Dwinelle/ }),
+      ).toBeInTheDocument()
+    })
+
     it("shows a group without a number when counts aren't known", () => {
       renderMap({ counts: 'unknown' })
 
-      show([GROUP])
+      zoomTo(12)
 
       expect(
         screen.getByRole('button', { name: '2 buildings. Zoom in' }),
       ).toHaveTextContent('')
     })
 
+    it('shows the right total as soon as counts change', () => {
+      const { update } = renderMap({ counts: 'unknown' })
+      zoomTo(12)
+      const before = group()
+
+      update({ counts: BOTH })
+
+      expect(group()).toBe(before)
+      expect(group()).toHaveTextContent('9')
+    })
+
     it('zooms in to split a group, by click or keyboard', async () => {
       const user = userEvent.setup()
       renderMap({ counts: BOTH })
-      show([GROUP])
-      const group = screen.getByRole('button', { name: /^2 buildings/ })
+      zoomTo(12)
 
-      await user.click(group)
-      expect(
-        mapbox.map.getSource('buildings')!.getClusterExpansionZoom,
-      ).toHaveBeenCalledWith(7, expect.any(Function))
+      await user.click(group())
       // Not essential, so reduced motion skips the movement.
       expect(mapbox.map.easeTo).toHaveBeenLastCalledWith({
-        center: [-122.26, 37.872],
-        zoom: 17,
+        center: [expect.any(Number), expect.any(Number)],
+        zoom: expect.any(Number),
       })
+      expect(mapbox.map.easeTo.mock.lastCall![0].zoom).toBeGreaterThan(12)
 
       mapbox.map.easeTo.mockClear()
-      group.focus()
+      act(() => group().focus())
       await user.keyboard('{Enter}')
-      expect(mapbox.map.easeTo).toHaveBeenCalledTimes(1)
+      // Again while the map is still moving, as it would be.
+      await user.keyboard('{Enter}')
+      expect(mapbox.map.easeTo).toHaveBeenCalledTimes(2)
     })
 
     it('keeps the selected building on its own', () => {
       renderMap({ counts: BOTH, selectedBuildingId: 2 })
 
-      show([clusterFeature({ id: 7, buildings: 3, free: 12 })])
+      zoomTo(12)
 
       expect(
         screen.getByRole('button', { name: 'Evans: 3 rooms free' }),
       ).toHaveAttribute('aria-pressed', 'true')
-    })
-
-    it('keeps a focused building out of a group until focus leaves', () => {
-      renderMap({ counts: BOTH })
-      const evans = screen.getByRole('button', { name: /^Evans/ })
-      act(() => evans.focus())
-
-      show([GROUP])
-      expect(evans).toBeVisible()
-
-      act(() => evans.blur())
-      expect(evans).not.toBeVisible()
-    })
-
-    it('moves focus to the map once a focused group splits', () => {
-      renderMap({ counts: BOTH })
-      show([GROUP])
-      const group = screen.getByRole('button', { name: /^2 buildings/ })
-      act(() => group.focus())
-
-      // Kept while the map zooms in.
-      mapbox.map.isMoving.mockReturnValue(true)
-      show([pointFeature(DWINELLE, 6), pointFeature(EVANS, 3)])
-      expect(group).toHaveFocus()
-
-      mapbox.map.isMoving.mockReturnValue(false)
-      act(() => mapbox.map.emit('moveend'))
-
-      expect(group).not.toBeInTheDocument()
-      expect(screen.getByRole('region', { name: 'Campus map' })).toHaveFocus()
-      expect(screen.getByRole('button', { name: /^Evans/ })).toBeInTheDocument()
-    })
-
-    it('updates a group in place', () => {
-      const { update } = renderMap({ counts: BOTH })
-      show([GROUP])
-      const group = screen.getByRole('button', { name: /^2 buildings/ })
-
-      update({ counts: new Map([[1, 6]]) })
-      show([clusterFeature({ id: 7, buildings: 2, free: 8 })])
-
-      expect(screen.getByRole('button', { name: /^2 buildings/ })).toBe(group)
-      expect(group).toHaveTextContent('8')
-    })
-
-    it('keeps the markers while Mapbox reloads the buildings', () => {
-      renderMap({ counts: BOTH })
-      show([GROUP])
-
-      mapbox.map.isSourceLoaded.mockReturnValue(false)
-      show([])
-
       expect(
-        screen.getByRole('button', { name: /^2 buildings/ }),
+        screen.queryByRole('button', { name: /buildings/ }),
+      ).not.toBeInTheDocument()
+    })
+
+    it('keeps a focused building out of groups until focus leaves', () => {
+      renderMap({
+        buildings: [DWINELLE, EVANS, DOE],
+        counts: new Map([
+          [1, 6],
+          [2, 3],
+          [4, 2],
+        ]),
+      })
+      const evansButton = screen.getByRole('button', { name: /^Evans/ })
+      act(() => evansButton.focus())
+
+      zoomTo(12)
+
+      // Evans on its own, and not counted in the group too.
+      expect(evansButton).toBeVisible()
+      expect(
+        screen.getByRole('button', {
+          name: '2 buildings, 8 rooms free. Zoom in',
+        }),
       ).toBeInTheDocument()
+
+      act(() => evansButton.blur())
+      expect(evansButton).not.toBeVisible()
+      expect(
+        screen.getByRole('button', {
+          name: '3 buildings, 11 rooms free. Zoom in',
+        }),
+      ).toBeInTheDocument()
+    })
+
+    it('moves focus to the map, without scrolling, when a focused group splits', () => {
+      renderMap({ counts: BOTH })
+      zoomTo(12)
+      const focused = group()
+      act(() => focused.focus())
+      const region = screen.getByRole('region', { name: 'Campus map' })
+      const focus = vi.spyOn(region, 'focus')
+
+      zoomTo(16)
+
+      expect(focused).not.toBeInTheDocument()
+      expect(region).toHaveFocus()
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true })
+      expect(screen.getByRole('button', { name: /^Evans/ })).toBeInTheDocument()
     })
 
     it('removes groups when the map goes away', () => {
       const { unmount } = renderMap({ counts: BOTH })
-      show([GROUP])
-      const group = screen.getByRole('button', { name: /^2 buildings/ })
+      zoomTo(12)
+      const shown = group()
 
       unmount()
 
-      expect(group).not.toBeInTheDocument()
+      expect(shown).not.toBeInTheDocument()
     })
 
     it('has accessible groups', async () => {
       const { container } = renderMap({ counts: BOTH })
-      show([GROUP])
+      zoomTo(12)
 
       await expectNoAxeViolations(container)
     })

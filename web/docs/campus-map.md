@@ -13,10 +13,13 @@ search is disabled until one is set.
 - **Groups.** Buildings close enough on screen to overlap merge into one
   stacked pill showing their total free rooms; choosing it zooms in until
   they split. From zoom 17 every building shows on its own. The selected
-  building is never grouped. While counts are unknown, a group is a stacked
-  dot. Mapbox does the grouping, in a clustered GeoJSON source; the pills
-  are still HTML buttons. `CLUSTER_RADIUS` and `CLUSTER_MAX_ZOOM` in
-  `CampusMap.tsx` set how eagerly buildings group.
+  building, and one with keyboard focus, are never grouped. While counts are
+  unknown, a group is a stacked dot. Groups are worked out with
+  [supercluster](https://github.com/mapbox/supercluster), the library behind
+  Mapbox's own clustering, whenever the map stops moving or the counts
+  change; the pills are HTML buttons. `CLUSTER_RADIUS` and
+  `CLUSTER_MAX_ZOOM` in `src/search/campusMapFeatures.ts` set how eagerly
+  buildings group.
 - **Choosing a building** on the map filters the results to it. Choosing it
   again, or Show all buildings under the results summary, shows every
   building.

@@ -3,15 +3,15 @@ import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import type { Building } from '../api/buildings'
 import {
-  buildingFeatures,
-  CLUSTER_PROPERTIES,
+  buildingPoints,
+  type Cluster,
   clusterContent,
+  clusterIndex,
+  type ClusterIndex,
+  groupsOnScreen,
   isLocated,
   lngLat,
   markerContent,
-  markersOnScreen,
-  type OnScreen,
-  type SourceFeature,
 } from './campusMapFeatures'
 import type { FreeRoomCounts } from './useBuildingAvailability'
 import styles from './CampusMap.module.css'
@@ -44,17 +44,6 @@ const START_VIEW = {
   bearing: -20,
 }
 
-// The GeoJSON source Mapbox groups nearby buildings in.
-const SOURCE_ID = 'buildings'
-
-// How close buildings group, in pixels: a little more than a pill's width,
-// so pills that would overlap merge instead.
-const CLUSTER_RADIUS = 40
-
-// The last zoom at which buildings group. Mapbox's default, 14, is below the
-// starting view; from 17 every building is shown on its own.
-const CLUSTER_MAX_ZOOM = 16
-
 /** A marker's button, with a pill inside. Mapbox gives a marker element
  * role="img" unless it has a role, which would hide a button inside it
  * from screen readers, so the element is the button itself. The pill is a
@@ -74,13 +63,17 @@ function markerButton(label: string): HTMLButtonElement {
 }
 
 /** Shows a marker's text, and toggles its kind's class. Toggles only this
- * component's classes; Mapbox adds its own. */
+ * component's classes; Mapbox adds its own. Text that hasn't changed isn't
+ * rewritten, so screen readers don't announce it again. */
 function showContent(
   element: HTMLElement,
   { text, label, kind }: { text: string; label: string; kind: string },
 ) {
-  element.firstElementChild!.textContent = text
-  element.setAttribute('aria-label', label)
+  const pill = element.firstElementChild!
+  if (pill.textContent !== text) pill.textContent = text
+  if (element.getAttribute('aria-label') !== label) {
+    element.setAttribute('aria-label', label)
+  }
   for (const state of ['free', 'none', 'unknown'] as const) {
     element.classList.toggle(styles[state], state === kind)
   }
@@ -121,12 +114,16 @@ function CampusMap({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
-  const sourceRef = useRef<mapboxgl.GeoJSONSource | null>(null)
-  // What Mapbox last showed: buildings on their own, and groups.
-  const onScreenRef = useRef<OnScreen>(markersOnScreen([]))
-  // Each group's marker, by Mapbox's cluster id.
+  // The buildings grouped at every zoom, made again when they change.
+  const indexRef = useRef<ClusterIndex | null>(null)
+  // The building whose marker has focus, which is never grouped.
+  const focusedRef = useRef<number | null>(null)
+  // Each group's marker, by its id, with the group it last showed.
   const clustersRef = useRef(
-    new Map<number, { marker: mapboxgl.Marker; element: HTMLElement }>(),
+    new Map<
+      number,
+      { marker: mapboxgl.Marker; element: HTMLElement; cluster: Cluster }
+    >(),
   )
   const located = useMemo(() => buildings.filter(isLocated), [buildings])
 
@@ -148,95 +145,86 @@ function CampusMap({
   })
   const unavailable = useEffectEvent(() => onUnavailable())
 
-  // Zooms in far enough for a group to split.
-  const zoomInto = useEffectEvent((clusterId: number) => {
-    const cluster = onScreenRef.current.clusters.get(clusterId)
-    if (!cluster) return
-    sourceRef.current?.getClusterExpansionZoom(clusterId, (error, zoom) => {
-      if (error || zoom == null) return
-      // Not marked essential, so Mapbox skips the movement for people who
-      // prefer reduced motion.
-      mapRef.current?.easeTo({ center: cluster.lngLat, zoom })
-    })
-  })
-
-  // Shows what Mapbox last showed. A building is shown on its own, or if
-  // it's selected, or if it has focus, e.g. just deselected with the
-  // keyboard, until focus leaves. A group's marker is made when it appears
-  // and removed when it goes, except a focused one while the map moves; once
-  // it stops, focus goes to the map.
-  const render = useEffectEvent(() => {
+  // Shows the buildings and groups in view. A building is shown on its own,
+  // or if it's selected, or if it has focus, e.g. just deselected with the
+  // keyboard, until focus leaves. Runs when the map stops moving, not as it
+  // moves: Mapbox keeps each marker in place meanwhile.
+  const update = useEffectEvent(() => {
     const map = mapRef.current
-    if (!map) return
-    const { buildingIds, clusters } = onScreenRef.current
+    const index = indexRef.current
+    const bounds = map?.getBounds()
+    if (!map || !index || !bounds) return
+    const { buildingIds, clusters } = groupsOnScreen(
+      index,
+      [
+        bounds.getWest(),
+        bounds.getSouth(),
+        bounds.getEast(),
+        bounds.getNorth(),
+      ],
+      map.getZoom(),
+    )
+
     for (const building of located) {
       const id = building.building_id
       const element = markers.get(id)!
-      element.hidden = !(
+      const hidden = !(
         buildingIds.has(id) ||
         id === selectedBuildingId ||
         element.contains(document.activeElement)
       )
+      if (element.hidden !== hidden) element.hidden = hidden
     }
 
+    // A group's marker is made when it appears and removed when it goes.
+    // Choosing it zooms in far enough for it to split, using the group it
+    // shows, so it works while the map is still moving.
     const shown = clustersRef.current
     for (const [id, cluster] of clusters) {
       let entry = shown.get(id)
-      if (!entry) {
+      if (entry) {
+        entry.cluster = cluster
+        entry.marker.setLngLat(cluster.lngLat)
+      } else {
         const element = markerButton('')
         element.classList.add(styles.cluster)
-        element.addEventListener('click', () => zoomInto(id))
         const marker = new mapboxgl.Marker({ element, anchor: 'center' })
-        entry = { marker, element }
-        shown.set(id, entry)
-        marker.setLngLat(cluster.lngLat).addTo(map)
+          .setLngLat(cluster.lngLat)
+          .addTo(map)
+        const added = { marker, element, cluster }
+        // Not marked essential, so Mapbox skips the movement for people who
+        // prefer reduced motion.
+        element.addEventListener('click', () =>
+          mapRef.current?.easeTo({
+            center: added.cluster.lngLat,
+            zoom: added.cluster.expansionZoom,
+          }),
+        )
+        shown.set(id, added)
+        entry = added
       }
-      entry.marker.setLngLat(cluster.lngLat)
       showContent(entry.element, clusterContent(cluster, counts))
     }
+    // A focused group that goes, e.g. split by zooming in, hands focus to
+    // the map, without scrolling the page to it.
     for (const [id, { marker, element }] of shown) {
       if (clusters.has(id)) continue
       const focused = element.contains(document.activeElement)
-      if (focused && map.isMoving()) continue
       marker.remove()
       shown.delete(id)
-      if (focused) containerRef.current?.focus()
+      if (focused) containerRef.current?.focus({ preventScroll: true })
     }
   })
 
-  // Reads what Mapbox shows, once the source has loaded. While it reloads,
-  // e.g. after new counts or a zoom, the last markers stay, so they don't
-  // flicker.
-  const refresh = useEffectEvent(() => {
-    const map = mapRef.current
-    if (!map || !sourceRef.current || !map.isSourceLoaded(SOURCE_ID)) return
-    // GeoJSON's types aren't installed, so Mapbox's features lack theirs.
-    const features = map.querySourceFeatures(
-      SOURCE_ID,
-    ) as unknown as SourceFeature[]
-    onScreenRef.current = markersOnScreen(features)
-    render()
-  })
-
-  // Adds the buildings for Mapbox to group, with a layer that draws nothing
-  // but makes Mapbox load them; a hidden layer wouldn't.
-  const addSource = useEffectEvent((map: mapboxgl.Map) => {
-    map.addSource(SOURCE_ID, {
-      type: 'geojson',
-      data: buildingFeatures(located, counts, selectedBuildingId),
-      cluster: true,
-      clusterRadius: CLUSTER_RADIUS,
-      clusterMaxZoom: CLUSTER_MAX_ZOOM,
-      clusterProperties: CLUSTER_PROPERTIES,
-    })
-    map.addLayer({
-      id: SOURCE_ID,
-      type: 'circle',
-      source: SOURCE_ID,
-      paint: { 'circle-radius': 0, 'circle-opacity': 0 },
-    })
-    sourceRef.current = map.getSource<mapboxgl.GeoJSONSource>(SOURCE_ID) ?? null
-    refresh()
+  // Groups the buildings again, e.g. after new counts, then shows them. The
+  // selected and focused buildings are left out, so they're always shown on
+  // their own and never counted in a group too.
+  const regroup = useEffectEvent(() => {
+    const leftOut = new Set<number>()
+    if (selectedBuildingId !== null) leftOut.add(selectedBuildingId)
+    if (focusedRef.current !== null) leftOut.add(focusedRef.current)
+    indexRef.current = clusterIndex(buildingPoints(located, counts, leftOut))
+    update()
   })
 
   // Creates the map over central campus. The token and buildings are
@@ -277,46 +265,45 @@ function CampusMap({
     map.on('error', (event: MapError) => {
       if (!loaded && stopsTheMap(event, styleLoaded)) unavailable()
     })
+    map.on('moveend', () => update())
 
-    // Sources can only be added once the style has loaded.
-    if (map.isStyleLoaded()) addSource(map)
-    else map.once('style.load', () => addSource(map))
-    map.on('render', () => refresh())
-    map.on('moveend', () => refresh())
-
-    // Places a marker for each building with a location. One kept only
-    // because it had focus goes once focus leaves.
-    const onFocusOut = (event: FocusEvent) => {
-      // The window lost focus, and it comes back here, so keep it.
-      if (document.activeElement === event.currentTarget) return
-      render()
-    }
+    // Places a marker for each building with a location. A focused one
+    // stays out of groups until focus leaves.
     const placed = located.map((building) => {
-      const element = markers.get(building.building_id)!
-      element.onclick = () => select(building.building_id)
-      element.addEventListener('focusout', onFocusOut)
+      const id = building.building_id
+      const element = markers.get(id)!
+      element.onclick = () => select(id)
+      element.onfocus = () => {
+        focusedRef.current = id
+        regroup()
+      }
+      element.onblur = () => {
+        // The window lost focus, and it comes back here, so keep it.
+        if (document.activeElement === element) return
+        if (focusedRef.current === id) focusedRef.current = null
+        regroup()
+      }
       return new mapboxgl.Marker({ element, anchor: 'center' })
         .setLngLat(lngLat(building))
         .addTo(map)
     })
+    // Shows the buildings straight away, without waiting for the style.
+    regroup()
 
     const clusters = clustersRef.current
     return () => {
-      placed.forEach((marker) => {
-        marker.getElement().removeEventListener('focusout', onFocusOut)
-        marker.remove()
-      })
+      placed.forEach((marker) => marker.remove())
       clusters.forEach(({ marker }) => marker.remove())
       clusters.clear()
-      onScreenRef.current = markersOnScreen([])
-      sourceRef.current = null
+      indexRef.current = null
+      focusedRef.current = null
       mapRef.current = null
       map.remove()
     }
   }, [token, located, markers])
 
-  // Shows each building's count, and which one is selected, and gives
-  // Mapbox the buildings to group.
+  // Shows each building's count, and which one is selected, and groups the
+  // buildings again.
   useEffect(() => {
     for (const building of located) {
       const element = markers.get(building.building_id)!
@@ -325,10 +312,7 @@ function CampusMap({
       element.setAttribute('aria-pressed', String(selected))
       element.classList.toggle(styles.selected, selected)
     }
-    sourceRef.current?.setData(
-      buildingFeatures(located, counts, selectedBuildingId),
-    )
-    render()
+    regroup()
   }, [located, markers, counts, selectedBuildingId])
 
   // Brings the selected building into view.
