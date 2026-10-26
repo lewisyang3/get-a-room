@@ -6,8 +6,8 @@ import { vi } from 'vitest'
  *     vi.mock('mapbox-gl', async () => (await import('../test/mapbox')).module)
  *
  * Markers are added to the map's container, so tests can find and click
- * them like any other element. The map shows the whole world, at the zoom
- * it was created with: to zoom, set `map.zoom` and emit 'moveend'. */
+ * them like any other element. The map stays at the zoom it was created
+ * with: to zoom, set `map.zoom` and emit 'moveend'. */
 
 type LngLat = [number, number]
 
@@ -75,15 +75,6 @@ class FakeMap {
 
   getZoom() {
     return this.zoom
-  }
-
-  getBounds() {
-    return {
-      getWest: () => -180,
-      getSouth: () => -85,
-      getEast: () => 180,
-      getNorth: () => 85,
-    }
   }
 
   remove() {

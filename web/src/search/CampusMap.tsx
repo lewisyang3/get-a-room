@@ -8,7 +8,7 @@ import {
   clusterContent,
   clusterIndex,
   type ClusterIndex,
-  groupsOnScreen,
+  groupsAt,
   isLocated,
   lngLat,
   markerContent,
@@ -118,7 +118,8 @@ function CampusMap({
   const indexRef = useRef<ClusterIndex | null>(null)
   // The building whose marker has focus, which is never grouped.
   const focusedRef = useRef<number | null>(null)
-  // Each group's marker, by its id, with the group it last showed.
+  // Each group's marker, by its lowest building id, which stays the same
+  // when the buildings are grouped again, with the group it last showed.
   const clustersRef = useRef(
     new Map<
       number,
@@ -145,25 +146,15 @@ function CampusMap({
   })
   const unavailable = useEffectEvent(() => onUnavailable())
 
-  // Shows the buildings and groups in view. A building is shown on its own,
+  // Shows the buildings and groups. A building is shown on its own,
   // or if it's selected, or if it has focus, e.g. just deselected with the
   // keyboard, until focus leaves. Runs when the map stops moving, not as it
   // moves: Mapbox keeps each marker in place meanwhile.
   const update = useEffectEvent(() => {
     const map = mapRef.current
     const index = indexRef.current
-    const bounds = map?.getBounds()
-    if (!map || !index || !bounds) return
-    const { buildingIds, clusters } = groupsOnScreen(
-      index,
-      [
-        bounds.getWest(),
-        bounds.getSouth(),
-        bounds.getEast(),
-        bounds.getNorth(),
-      ],
-      map.getZoom(),
-    )
+    if (!map || !index) return
+    const { buildingIds, clusters } = groupsAt(index, map.getZoom())
 
     for (const building of located) {
       const id = building.building_id

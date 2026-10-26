@@ -3,7 +3,7 @@ import {
   buildingPoints,
   clusterContent,
   clusterIndex,
-  groupsOnScreen,
+  groupsAt,
   type LocatedBuilding,
 } from './campusMapFeatures'
 
@@ -25,7 +25,6 @@ const BOTH = new Map([
   [1, 6],
   [2, 3],
 ])
-const WORLD: [number, number, number, number] = [-180, -85, 180, 85]
 
 function ids(points: ReturnType<typeof buildingPoints>) {
   return points.map((p) => p.properties.building_id)
@@ -57,11 +56,11 @@ describe('buildingPoints', () => {
   })
 })
 
-describe('groupsOnScreen', () => {
+describe('groupsAt', () => {
   const index = clusterIndex(buildingPoints([DWINELLE, EVANS], BOTH, new Set()))
 
   it('groups nearby buildings when zoomed out, summing their rooms', () => {
-    const { buildingIds, clusters } = groupsOnScreen(index, WORLD, 12.5)
+    const { buildingIds, clusters } = groupsAt(index, 12.5)
 
     expect(buildingIds.size).toBe(0)
     expect([...clusters.values()]).toEqual([
@@ -75,8 +74,27 @@ describe('groupsOnScreen', () => {
     expect([...clusters.values()][0].expansionZoom).toBeGreaterThan(12)
   })
 
+  it('keys a group by its lowest building id, whatever else is grouped', () => {
+    const far: LocatedBuilding = {
+      building_id: 0,
+      building_code: 'LHS',
+      building_name: 'Lawrence Hall of Science',
+      latitude: 37.8793,
+      longitude: -122.2465,
+    }
+    const counts = new Map([...BOTH, [0, 1]])
+
+    for (const leftOut of [new Set<number>(), new Set([0])]) {
+      const regrouped = clusterIndex(
+        buildingPoints([far, DWINELLE, EVANS], counts, leftOut),
+      )
+      const { clusters } = groupsAt(regrouped, 12)
+      expect([...clusters.keys()]).toEqual([1])
+    }
+  })
+
   it('shows each building on its own when zoomed in', () => {
-    const { buildingIds, clusters } = groupsOnScreen(index, WORLD, 16)
+    const { buildingIds, clusters } = groupsAt(index, 16)
 
     expect([...buildingIds]).toEqual([1, 2])
     expect(clusters.size).toBe(0)

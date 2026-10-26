@@ -32,6 +32,14 @@ const DOE: LocatedBuilding = {
   latitude: 37.8722,
   longitude: -122.2594,
 }
+// Far enough from the others not to group with them.
+const LAWRENCE: LocatedBuilding = {
+  building_id: 5,
+  building_code: 'LHS',
+  building_name: 'Lawrence Hall of Science',
+  latitude: 37.8793,
+  longitude: -122.2465,
+}
 const NOWHERE: Building = {
   building_id: 3,
   building_code: 'HFA',
@@ -342,6 +350,22 @@ describe('CampusMap', () => {
       expect(region).toHaveFocus()
       expect(focus).toHaveBeenCalledWith({ preventScroll: true })
       expect(screen.getByRole('button', { name: /^Evans/ })).toBeInTheDocument()
+    })
+
+    it('keeps a group’s button while focus moves between buildings', () => {
+      renderMap({
+        buildings: [DWINELLE, EVANS, LAWRENCE],
+        counts: new Map([...BOTH, [5, 1]]),
+      })
+      zoomTo(12)
+      const before = group()
+      const lawrence = screen.getByRole('button', { name: /^Lawrence/ })
+
+      // Each regroups the buildings, without and then with Lawrence.
+      act(() => lawrence.focus())
+      expect(group()).toBe(before)
+      act(() => lawrence.blur())
+      expect(group()).toBe(before)
     })
 
     it('removes groups when the map goes away', () => {

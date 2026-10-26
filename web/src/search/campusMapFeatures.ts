@@ -30,8 +30,10 @@ export type Cluster = {
   expansionZoom: number
 }
 
-/** What's on screen: buildings shown on their own, and groups by id. */
-export type OnScreen = {
+/** Buildings shown on their own, and groups keyed by their lowest
+ * building id, which stays the same when the buildings are grouped again.
+ * Supercluster's own ids change whenever a building joins or leaves. */
+export type Groups = {
   buildingIds: Set<number>
   clusters: Map<number, Cluster>
 }
@@ -93,29 +95,33 @@ export function clusterIndex(points: BuildingPoint[]): ClusterIndex {
   }).load(points)
 }
 
-/** The buildings and groups in a box, `[west, south, east, north]`, at a
- * zoom. */
-export function groupsOnScreen(
-  index: ClusterIndex,
-  bbox: [number, number, number, number],
-  zoom: number,
-): OnScreen {
-  const onScreen: OnScreen = { buildingIds: new Set(), clusters: new Map() }
-  for (const feature of index.getClusters(bbox, Math.floor(zoom))) {
+// All of the world: grouping every building, not just those in view, is
+// cheap for one campus, and means panning never reveals a gap.
+const WORLD: [number, number, number, number] = [-180, -85, 180, 85]
+
+/** Every building and group at a zoom. */
+export function groupsAt(index: ClusterIndex, zoom: number): Groups {
+  const groups: Groups = { buildingIds: new Set(), clusters: new Map() }
+  for (const feature of index.getClusters(WORLD, Math.floor(zoom))) {
     const { properties } = feature
     if ('cluster_id' in properties) {
       const id = properties.cluster_id
-      onScreen.clusters.set(id, {
+      const key = Math.min(
+        ...index
+          .getLeaves(id, Infinity)
+          .map((leaf) => leaf.properties.building_id),
+      )
+      groups.clusters.set(key, {
         lngLat: feature.geometry.coordinates as LngLat,
         buildings: properties.point_count,
         free: properties.free,
         expansionZoom: index.getClusterExpansionZoom(id),
       })
     } else {
-      onScreen.buildingIds.add(properties.building_id)
+      groups.buildingIds.add(properties.building_id)
     }
   }
-  return onScreen
+  return groups
 }
 
 /** What a group's marker shows: its buildings' total, and a name that says
