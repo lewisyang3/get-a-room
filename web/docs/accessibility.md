@@ -11,7 +11,8 @@ The page aims for WCAG 2.2 AA on phones and desktops.
   is a live region, so a changed filter announces the new room count.
 - **Map:** each building on the map is a button named with its count, e.g.
   "Evans: 3 rooms free". It's marked pressed when selected, and it's reachable
-  with Tab. Everything the map does is also available without it: the list
+  with Tab. Buildings with no room free have no button unless selected; if
+  the focused one is left off, focus moves to the map. Everything the map does is also available without it: the list
   shows each building's rooms, the Room or building search finds a building
   by name, and Show all buildings clears a building chosen on the map.
 - **Zoom and small screens:** the page reflows down to 320 CSS px (400% zoom)

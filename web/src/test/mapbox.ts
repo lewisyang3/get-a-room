@@ -42,11 +42,19 @@ class FakeMap {
   readonly setConfigProperty = vi.fn()
   removed = false
   private readonly listeners = new Map<string, ((event?: unknown) => void)[]>()
+  private readonly canvas = document.createElement('canvas')
 
   constructor(options: MapOptions) {
     if (mapbox.failToCreate) throw new Error('Failed to initialize WebGL')
     this.options = options
+    // Focusable, as Mapbox's canvas is.
+    this.canvas.tabIndex = 0
+    options.container.append(this.canvas)
     mapbox.maps.push(this)
+  }
+
+  getCanvas() {
+    return this.canvas
   }
 
   on(type: string, listener: (event?: unknown) => void) {

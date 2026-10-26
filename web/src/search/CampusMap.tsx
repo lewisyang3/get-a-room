@@ -77,8 +77,9 @@ function stopsTheMap(event: MapError, styleLoaded: boolean): boolean {
 }
 
 /** A Mapbox map of campus with one button per building, showing how many
- * rooms it has free. Choosing a building's button selects it; choosing it
- * again goes back to every building. */
+ * rooms it has free. Buildings with none free are left off, unless
+ * selected. Choosing a building's button selects it; choosing it again goes
+ * back to every building. */
 function CampusMap({
   token,
   buildings,
@@ -181,6 +182,14 @@ function CampusMap({
       const element = markers.get(building.building_id)!
       const { text, label, kind } = markerContent(building, counts)
       const selected = building.building_id === selectedBuildingId
+      // No room free: left off the map, unless it's selected.
+      const hidden = kind === 'none' && !selected
+      // Hiding the focused marker, e.g. on deselecting a building with none
+      // free, would drop focus to the page, so it moves to the map instead.
+      if (hidden && element.contains(document.activeElement)) {
+        mapRef.current?.getCanvas().focus()
+      }
+      element.hidden = hidden
       element.firstElementChild!.textContent = text
       element.setAttribute('aria-label', label)
       element.setAttribute('aria-pressed', String(selected))
@@ -192,7 +201,7 @@ function CampusMap({
     }
   }, [located, markers, counts, selectedBuildingId])
 
-  // Brings a building chosen elsewhere, e.g. the Building filter, into view.
+  // Brings the selected building into view.
   // Not marked essential, so Mapbox skips the movement for people who prefer
   // reduced motion.
   useEffect(() => {

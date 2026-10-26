@@ -7,8 +7,9 @@ search is disabled until one is set.
 
 - **Counts follow the search.** They use the same time, minimum and room or
   building search as the list, at the same minute. Every building keeps its
-  count while one is selected. A faded "0" means no room is free there. A
-  plain dot means the counts haven't loaded or couldn't be loaded.
+  count while one is selected. Buildings with no room free are left off the
+  map, except a selected one, which shows a faded "0". A plain dot means the
+  counts haven't loaded or couldn't be loaded.
 - **Choosing a building** on the map filters the results to it. Choosing it
   again, or Show all buildings under the results summary, shows every
   building.
@@ -22,6 +23,6 @@ search is disabled until one is set.
   the map is left out with no notice. Mapbox GL loads only when the map is
   shown, in a separate chunk.
 
-The map uses Mapbox's Standard style, with day lighting in light mode and night
-lighting in dark mode. Building locations come from `GET /buildings`, and the
+The map uses Mapbox's Standard style, with dusk lighting to match the dark
+theme. Building locations come from `GET /buildings`, and the
 counts from `GET /availability/buildings`.

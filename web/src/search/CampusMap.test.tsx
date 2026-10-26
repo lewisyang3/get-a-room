@@ -77,10 +77,10 @@ describe('CampusMap', () => {
     expect(
       screen.getByRole('button', { name: 'Dwinelle: 6 rooms free' }),
     ).toHaveTextContent('6')
-    // Left out of the counts, so it has none free.
+    // Left out of the counts, so it has none free and is left off the map.
     expect(
-      screen.getByRole('button', { name: 'Evans: 0 rooms free' }),
-    ).toHaveTextContent('0')
+      screen.queryByRole('button', { name: /^Evans/ }),
+    ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: /Hearst/ }),
     ).not.toBeInTheDocument()
@@ -100,6 +100,7 @@ describe('CampusMap', () => {
     expect(screen.getByRole('button', { name: 'Dwinelle' })).toHaveTextContent(
       '',
     )
+    expect(screen.getByRole('button', { name: 'Evans' })).toBeInTheDocument()
   })
 
   it('updates the counts in place', () => {
@@ -110,7 +111,33 @@ describe('CampusMap', () => {
     expect(
       screen.getByRole('button', { name: 'Evans: 3 rooms free' }),
     ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /^Dwinelle/ }),
+    ).not.toBeInTheDocument()
     expect(mapbox.maps).toHaveLength(1)
+  })
+
+  it("keeps a selected building with no rooms free, until it's deselected", () => {
+    const { update } = renderMap({ selectedBuildingId: 2 })
+
+    expect(
+      screen.getByRole('button', { name: 'Evans: 0 rooms free' }),
+    ).toHaveTextContent('0')
+
+    update({ selectedBuildingId: null })
+
+    expect(
+      screen.queryByRole('button', { name: /^Evans/ }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('moves focus to the map when the focused marker is left off', () => {
+    const { update } = renderMap({ selectedBuildingId: 2 })
+    screen.getByRole('button', { name: /^Evans/ }).focus()
+
+    update({ selectedBuildingId: null })
+
+    expect(mapbox.map.getCanvas()).toHaveFocus()
   })
 
   it('selects a building, and selecting it again goes back to all', async () => {

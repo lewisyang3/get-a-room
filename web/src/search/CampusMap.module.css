@@ -73,7 +73,13 @@
   border-color: var(--accent);
 }
 
-/* No room free: still there to choose, but quiet. */
+/* No room free, and not selected: left off the map. This beats the
+   `display: flex` above, which the browser's own [hidden] rule doesn't. */
+.marker[hidden] {
+  display: none;
+}
+
+/* No room free but selected: still there to choose again, but quiet. */
 .none .pill {
   color: var(--text-secondary);
   background: var(--surface);
