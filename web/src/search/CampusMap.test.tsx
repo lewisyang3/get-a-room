@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Building } from '../api/buildings'
@@ -142,6 +142,10 @@ describe('CampusMap', () => {
       screen.getByRole('button', { name: 'Evans: 0 rooms free' }),
     ).toHaveAttribute('aria-pressed', 'false')
     expect(evans).toHaveFocus()
+
+    // Switching apps fires focusout but leaves focus here, to come back to.
+    fireEvent.focusOut(evans)
+    expect(evans).toBeVisible()
 
     act(() => evans.blur())
 
