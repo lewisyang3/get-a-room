@@ -93,6 +93,24 @@
   padding: 0;
 }
 
+/* A group of buildings: a pill with another peeking out behind it, so it
+   reads as more than one. */
+.cluster .pill {
+  box-shadow:
+    3px -3px 0 -1px var(--bg),
+    3px -3px 0 0 var(--accent),
+    0 1px 3px rgb(0 0 0 / 0.25);
+}
+
+.cluster.unknown .pill {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  box-shadow:
+    3px -3px 0 -1px var(--bg),
+    3px -3px 0 0 var(--border),
+    0 1px 3px rgb(0 0 0 / 0.25);
+}
+
 .selected {
   z-index: 1;
 }

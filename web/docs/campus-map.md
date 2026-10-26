@@ -10,6 +10,13 @@ search is disabled until one is set.
   count while one is selected. Buildings with no room free are left off the
   map, except a selected one, which shows a faded "0". A plain dot means the
   counts haven't loaded or couldn't be loaded.
+- **Groups.** Buildings close enough on screen to overlap merge into one
+  stacked pill showing their total free rooms; choosing it zooms in until
+  they split. From zoom 17 every building shows on its own. The selected
+  building is never grouped. While counts are unknown, a group is a stacked
+  dot. Mapbox does the grouping, in a clustered GeoJSON source; the pills
+  are still HTML buttons. `CLUSTER_RADIUS` and `CLUSTER_MAX_ZOOM` in
+  `CampusMap.tsx` set how eagerly buildings group.
 - **Choosing a building** on the map filters the results to it. Choosing it
   again, or Show all buildings under the results summary, shows every
   building.

@@ -12,7 +12,11 @@ The page aims for WCAG 2.2 AA on phones and desktops.
 - **Map:** each building on the map is a button named with its count, e.g.
   "Evans: 3 rooms free". It's marked pressed when selected, and it's reachable
   with Tab. Buildings with no room free have no button unless selected; one
-  that has focus stays until focus moves on. Everything the map does is also
+  that has focus stays until focus moves on, and isn't merged into a group
+  until then. A group of buildings is a button named with its total, e.g.
+  "5 buildings, 34 rooms free. Zoom in", and choosing it zooms in. When a
+  focused group splits, focus moves to the map. Groups come after buildings
+  in Tab order, not in their order on the map. Everything the map does is also
   available without it: the list shows each building's rooms, the Room or
   building search finds a building by name, and Show all buildings clears a
   building chosen on the map.
