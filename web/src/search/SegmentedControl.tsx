@@ -4,6 +4,8 @@ import styles from './SegmentedControl.module.css'
 export type SegmentedOption<T> = {
   value: T
   label: string
+  /** What screen readers say, when the short label reads badly aloud. */
+  accessibleLabel?: string
 }
 
 type Props<T> = {
@@ -39,6 +41,7 @@ function SegmentedControl<T extends string | number>({
             type="radio"
             name={name}
             value={option.value}
+            aria-label={option.accessibleLabel}
             checked={option.value === value}
             onChange={() => onChange(option.value)}
           />

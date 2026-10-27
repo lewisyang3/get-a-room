@@ -10,12 +10,12 @@ export function formatClockTime(value: string): string {
   return `${hour12}:${String(minutes).padStart(2, '0')}${NBSP}${suffix}`
 }
 
-/** Formats a duration in minutes as e.g. "2 h 30 min", "1 h" or "45 min". */
+/** Formats a duration in minutes as e.g. "2h 30 min", "1h" or "45 min". */
 export function formatDuration(totalMinutes: number): string {
   const hours = Math.floor(totalMinutes / 60)
   const minutes = totalMinutes % 60
   const parts: string[] = []
-  if (hours > 0) parts.push(`${hours}${NBSP}h`)
+  if (hours > 0) parts.push(`${hours}h`)
   if (minutes > 0 || hours === 0) parts.push(`${minutes}${NBSP}min`)
   return parts.join(' ')
 }

@@ -23,8 +23,8 @@ describe('formatClockTime', () => {
 describe('formatDuration', () => {
   it.each([
     [45, '45 min'],
-    [60, '1 h'],
-    [150, '2 h 30 min'],
+    [60, '1h'],
+    [150, '2h 30 min'],
     [0, '0 min'],
   ])('formats %i minutes as %s', (minutes, expected) => {
     expect(formatDuration(minutes)).toBe(expected.replace(/(\d) /g, '$1 '))

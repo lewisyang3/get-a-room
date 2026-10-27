@@ -65,7 +65,7 @@
 
 .searchInput {
   width: 100%;
-  max-width: 21rem;
+  max-width: var(--field-width);
   min-height: 2.75rem;
   padding: 0 var(--space-3);
   font: inherit;

@@ -1,6 +1,6 @@
 import { useId, type FormEvent } from 'react'
 import { MINIMUM_MINUTES_OPTIONS } from '../api/availability'
-import { formatDuration } from '../format'
+import { formatDuration, formatMinimumDuration } from '../format'
 import styles from './AvailabilitySearch.module.css'
 import SegmentedControl, { type SegmentedOption } from './SegmentedControl'
 
@@ -13,8 +13,13 @@ type Props = {
   onTextChange: (text: string) => void
 }
 
+// Screen readers say "2 hours" for the short "2h".
 const DURATION_OPTIONS: SegmentedOption<number>[] = MINIMUM_MINUTES_OPTIONS.map(
-  (minutes) => ({ value: minutes, label: formatDuration(minutes) }),
+  (minutes) => ({
+    value: minutes,
+    label: formatDuration(minutes),
+    accessibleLabel: formatMinimumDuration(minutes),
+  }),
 )
 
 function SearchForm({

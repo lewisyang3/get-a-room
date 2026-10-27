@@ -141,10 +141,6 @@ function requestedUrl(fetchMock: ReturnType<typeof vi.fn>, call: number) {
   return new URL(fetchMock.mock.calls[call][0] as string)
 }
 
-// Text from the formatters uses non-breaking spaces. toHaveTextContent
-// collapses them to plain spaces, but accessible names keep them.
-const nbsp = (text: string) => text.replaceAll(' ', ' ')
-
 /** Makes the screen wide enough for the map beside the results, or not.
  * jsdom has no matchMedia of its own. */
 function stubScreen(width: 'wide' | 'narrow') {
@@ -184,7 +180,7 @@ describe('AvailabilitySearch', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]).toHaveTextContent('Room 201')
     expect(rows[0]).toHaveTextContent('Free 2:30 PM – 5:00 PM')
-    expect(rows[0]).toHaveTextContent('2 h 30 min')
+    expect(rows[0]).toHaveTextContent('2h 30 min')
     expect(rows[1]).toHaveTextContent('45 min')
     // Every building is shown, so there's nothing to clear.
     expect(
@@ -262,7 +258,7 @@ describe('AvailabilitySearch', () => {
       render(<AvailabilitySearch termId={3} />)
 
       await screen.findByRole('heading', { name: '1 room free now' })
-      expect(screen.getByRole('radio', { name: nbsp('1 h') })).toBeChecked()
+      expect(screen.getByRole('radio', { name: '1 hour' })).toBeChecked()
       expect(
         requestedUrl(fetchMock, 0).searchParams.get('minimum_minutes'),
       ).toBe('60')
@@ -278,7 +274,7 @@ describe('AvailabilitySearch', () => {
       render(<AvailabilitySearch termId={3} />)
       await screen.findByRole('heading', { name: '2 rooms free now' })
 
-      await user.click(screen.getByRole('radio', { name: nbsp('2 h') }))
+      await user.click(screen.getByRole('radio', { name: '2 hours' }))
 
       expect(
         await screen.findByRole('heading', { name: '1 room free now' }),
@@ -299,7 +295,7 @@ describe('AvailabilitySearch', () => {
       render(<AvailabilitySearch termId={3} />)
       await screen.findByRole('heading', { name: '1 room free now' })
 
-      await user.click(screen.getByRole('radio', { name: nbsp('3 h') }))
+      await user.click(screen.getByRole('radio', { name: '3 hours' }))
       expect(screen.getByText('For at least 1 hour')).toBeInTheDocument()
 
       respond(jsonResponse(page([])))
@@ -438,7 +434,7 @@ describe('AvailabilitySearch', () => {
       render(<AvailabilitySearch termId={3} />)
       await screen.findByRole('heading', { name: '1 room free now' })
 
-      await user.click(screen.getByRole('radio', { name: nbsp('2 h') }))
+      await user.click(screen.getByRole('radio', { name: '2 hours' }))
       await screen.findByText(/^For at least 2 hours/)
       await user.type(searchField(), '101')
 
@@ -727,7 +723,7 @@ describe('AvailabilitySearch', () => {
 
       await user.click(await screen.findByRole('button', { name: 'Try again' }))
       // A new search replaces the retry before it finishes.
-      const option = screen.getByRole('radio', { name: nbsp('30 min') })
+      const option = screen.getByRole('radio', { name: '30 minutes' })
       await user.click(option)
       respond(jsonResponse(page([room(1)])))
       await screen.findByRole('heading', { name: '1 room free now' })
@@ -744,7 +740,7 @@ describe('AvailabilitySearch', () => {
       render(<AvailabilitySearch termId={3} />)
       await screen.findByRole('heading', { name: '1 room free now' })
 
-      const option = screen.getByRole('radio', { name: nbsp('30 min') })
+      const option = screen.getByRole('radio', { name: '30 minutes' })
       await user.click(option)
       await screen.findByRole('heading', { name: '2 rooms free now' })
 
