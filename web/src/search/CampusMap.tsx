@@ -178,7 +178,6 @@ function CampusMap({
         entry.marker.setLngLat(cluster.lngLat)
       } else {
         const element = markerButton('')
-        element.classList.add(styles.cluster)
         const marker = new mapboxgl.Marker({ element, anchor: 'center' })
           .setLngLat(cluster.lngLat)
           .addTo(map)

@@ -11,10 +11,10 @@ search is disabled until one is set.
   map, except a selected one, which shows a faded "0". A plain dot means the
   counts haven't loaded or couldn't be loaded.
 - **Groups.** Buildings close enough on screen to overlap merge into one
-  stacked pill showing their total free rooms; choosing it zooms in until
-  they split. From zoom 17 every building shows on its own. The selected
+  pill showing their total free rooms; choosing it zooms in until they
+  split. From zoom 17 every building shows on its own. The selected
   building, and one with keyboard focus, are never grouped. While counts are
-  unknown, a group is a stacked dot. Groups are worked out with
+  unknown, a group is a dot like a building's. Groups are worked out with
   [supercluster](https://github.com/mapbox/supercluster), the library behind
   Mapbox's own clustering, whenever the map stops moving or the counts
   change; the pills are HTML buttons. `CLUSTER_RADIUS` and
